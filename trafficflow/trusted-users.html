@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>TrafficIQ — Legends</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@600;700;800&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link rel="stylesheet" href="trusted-users.css"/>
+</head>
+<body>
+
+<!-- THREE.JS BG -->
+<canvas id="bg"></canvas>
+
+<!-- TOP BAR -->
+<header id="topbar">
+  <div class="tb-l">
+    <a href="dashboard.html" class="back-btn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M5 12l7-7M5 12l7 7"/></svg>Back
+    </a>
+    <div class="tb-brand">
+      <span class="live-badge"><span class="ldot"></span>LIVE</span>
+      <h1>Legends · <em>Leaderboard</em></h1>
+    </div>
+  </div>
+  <div class="tb-r">
+    <div class="tb-stat"><strong id="tbUsers">247</strong><span>reporters</span></div>
+    <div class="tb-stat"><strong id="tbCoins">1.2k</strong><span>coins today</span></div>
+    <button id="themeBtn" class="icon-btn">🌙</button>
+  </div>
+</header>
+
+<!-- LAYOUT -->
+<div class="layout">
+
+  <!-- LEFT — Leaderboard -->
+  <aside id="panel">
+    <div class="panel-inner">
+
+      <div class="section-header">
+        <span class="section-ico">🏆</span>
+        <div>
+          <p class="section-title">TOP LEGENDS</p>
+          <p class="section-sub">Ranked by Trust Score</p>
+        </div>
+        <div class="season-badge">Season 4</div>
+      </div>
+
+      <!-- Podium top 3 -->
+      <div class="podium" id="podium"></div>
+
+      <!-- Rank 4–10 -->
+      <div class="rank-list" id="rankList"></div>
+
+      <!-- My Rank -->
+      <div class="my-rank-wrap">
+        <p class="panel-title" style="margin-bottom:8px">YOUR RANK</p>
+        <div class="my-rank-card" id="myRankCard"></div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- RIGHT — Rewards -->
+  <main class="rewards-panel">
+    <div class="rewards-inner">
+
+      <!-- My Coin Wallet -->
+      <div class="wallet-card" id="walletCard">
+        <div class="wallet-bg-glow"></div>
+        <div style="font-size:.95rem;font-weight:900;letter-spacing:.15em;color:#fbbf24;text-transform:uppercase;margin-bottom:10px;margin-top:-10px;text-shadow:0 0 12px rgba(245,158,11,.8),0 1px 4px rgba(0,0,0,1);font-family:'Space Grotesk',sans-serif;">🔥 YOUR COINS</div>
+        <div class="wallet-top">
+          <div class="wallet-icon">🪙</div>
+          <span class="wallet-coins" id="walletCoins">142</span>
+          <div class="wallet-streak">
+            <span class="streak-flame">🔥</span>
+            <span class="streak-count">7</span>
+            <span class="streak-lbl">day streak</span>
+          </div>
+        </div>
+        <div class="wallet-progress-lbl">
+          <span>Progress to next reward</span>
+          <span id="walletPct">71%</span>
+        </div>
+        <div class="wallet-bar">
+          <div class="wallet-fill" id="walletFill" style="width:0%"></div>
+          <div class="wallet-milestone" style="left:50%"><span>100</span></div>
+          <div class="wallet-milestone" style="left:100%"><span>200</span></div>
+        </div>
+        <div class="wallet-meta">142 / 200 coins · <strong>58 more to go</strong></div>
+      </div>
+
+      <!-- Rewards Grid -->
+      <p class="rw-section-title">🎁 REWARD UNLOCKS</p>
+      <div class="rewards-grid" id="rewardsGrid"></div>
+
+      <!-- How to Earn -->
+      <p class="rw-section-title" style="margin-top:20px">⚡ HOW TO EARN COINS</p>
+      <div class="earn-list" id="earnList"></div>
+
+      <!-- Badge Progress -->
+      <p class="rw-section-title" style="margin-top:20px">🎖 BADGE PROGRESS</p>
+      <div class="badge-grid" id="badgeGrid"></div>
+
+    </div>
+  </main>
+</div>
+
+<script src="trusted-users.js"></script>
+</body>
+</html>
