@@ -1,0 +1,10 @@
+{
+  "hosting": {
+    "public": "trafficflow",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}
