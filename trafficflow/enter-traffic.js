@@ -155,7 +155,7 @@ const S = {
   /*
     likedKeys stores "authorName__msgId" strings so we know:
     - which specific message the user liked (to show liked state on the button)
-    - but we only increment likeCount once per authorName per msgId
+    - prevents double-liking the same message
   */
   likedKeys: new Set(JSON.parse(localStorage.getItem('tiq-liked-keys') || '[]')),
 };
@@ -203,23 +203,25 @@ function timeStr(timestamp) {
 }
 
 const renderedIds  = new Set();
-const likeListeners = {};
+const likeListeners = {}; // keyed by msgId (not authorName) for per-message counts
 
 /* ══ LIKE A MESSAGE ══
-   Structure in message_likes:
-   ─────────────────────────────
-   message_likes/{authorName}          ← ONE doc per user, doc ID = authorName
+   Dual-collection structure:
+   ─────────────────────────────────────────────────────────
+   messageLikeCounts/{msgId}
+     likeCount: 3              ← per-message like count (shown on button)
+
+   message_likes/{authorName}
      authorName: "Driver_484"
-     likeCount:  7                     ← total likes from ALL pages combined
+     likeCount:  7             ← leaderboard total (all messages, all pages)
      lastUpdated: timestamp
-     likers/                           ← sub-collection to prevent double-liking
+     likers/
        "{liker}__{msgId}": { likedAt, liker, msgId, page }
-   ─────────────────────────────
-   Key insight: likeCount on the user doc increments for every like
-   received on any message from any page. The likers sub-collection
-   uses "{liker}__{msgId}" as doc ID so each person can only like
-   each specific message once, but CAN like multiple messages from
-   the same author (each adds +1 to that author's total likeCount).
+   ─────────────────────────────────────────────────────────
+   Key insight:
+   - Like button shows count from messageLikeCounts/{msgId}
+   - Leaderboard reads message_likes/{authorName}.likeCount
+   - Both are incremented atomically on each like action
 ══ */
 function likeMessage(msgId, authorName, btnEl) {
   if (!window._db) return;
@@ -235,12 +237,16 @@ function likeMessage(msgId, authorName, btnEl) {
   }
 
   // Safe doc ID for the liker sub-collection: "{liker}__{msgId}"
-  const safeKey  = (S.name + '__' + msgId).replace(/[^a-zA-Z0-9_\-]/g, '_');
+  const safeKey = (S.name + '__' + msgId).replace(/[^a-zA-Z0-9_\-]/g, '_');
 
-  // Ref to the author's doc in message_likes (doc ID = authorName)
+  // ── Collection refs ──
+  // Per-message like count (shown on the like button)
+  const msgLikeCountRef = window._db.collection('messageLikeCounts').doc(msgId);
+
+  // Per-author leaderboard doc (total likes across all pages)
   const authorDocRef = window._db.collection('message_likes').doc(authorName);
 
-  // Ref to the specific liker record (prevents double-liking this message)
+  // Sub-doc that prevents double-liking this specific message
   const likerRef = authorDocRef.collection('likers').doc(safeKey);
 
   // ── Optimistic UI update ──
@@ -253,6 +259,7 @@ function likeMessage(msgId, authorName, btnEl) {
   gsap.fromTo(btnEl, { scale: 1.4 }, { scale: 1, duration: .4, ease: 'back.out(2)' });
 
   // ── Write to Firestore ──
+  // Step 1: Record that this liker liked this specific message (idempotency guard)
   likerRef.set({
     likedAt: firebase.firestore.FieldValue.serverTimestamp(),
     liker:   S.name,
@@ -260,15 +267,23 @@ function likeMessage(msgId, authorName, btnEl) {
     page:    'enter-traffic',
   })
   .then(() => {
-    // Increment the author's total likeCount (one doc per user)
-    return authorDocRef.set({
+    // Step 2a: Increment per-message like count (drives the like button UI)
+    const p1 = msgLikeCountRef.set({
+      likeCount:   firebase.firestore.FieldValue.increment(1),
+      lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    // Step 2b: Increment author's leaderboard total (drives the leaderboard)
+    const p2 = authorDocRef.set({
       authorName:  authorName,
       likeCount:   firebase.firestore.FieldValue.increment(1),
       lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
+
+    return Promise.all([p1, p2]);
   })
   .then(() => {
-    console.log('[TrafficIQ] ✅ Like saved. authorName:', authorName);
+    console.log('[TrafficIQ] ✅ Like saved. msgId:', msgId, '| authorName:', authorName);
   })
   .catch(err => {
     console.error('[TrafficIQ] Like failed:', err);
@@ -281,29 +296,38 @@ function likeMessage(msgId, authorName, btnEl) {
   });
 }
 
-/* ══ SUBSCRIBE TO LIVE LIKE COUNT for a message author ══
-   Since we store likes per user (not per message), we listen to
-   the author's doc. Multiple messages from same author share one listener.
+/* ══ SUBSCRIBE TO LIVE LIKE COUNT for a specific message ══
+   Listens to messageLikeCounts/{msgId} so the button shows
+   the count for THIS message only (not the author's total).
+
+   Previously this listened to message_likes/{authorName} which
+   caused all messages from the same author to show the same
+   aggregated count — now each message has its own counter.
 ══ */
-function subscribeLikes(authorName, btnEl) {
-  // Use authorName as listener key — one snapshot per author
-  if (!likeListeners[authorName]) {
-    likeListeners[authorName] = {
-      unsub: window._db.collection('message_likes').doc(authorName)
+function subscribeLikes(msgId, btnEl) {
+  if (!likeListeners[msgId]) {
+    likeListeners[msgId] = {
+      unsub: window._db.collection('messageLikeCounts').doc(msgId)
         .onSnapshot(snap => {
-          const total = snap.exists ? (snap.data().likeCount || 0) : 0;
-          // Update all like buttons for this author
-          if (likeListeners[authorName]) {
-            likeListeners[authorName].btns.forEach(b => {
+          const count = snap.exists ? (snap.data().likeCount || 0) : 0;
+          if (likeListeners[msgId]) {
+            likeListeners[msgId].btns.forEach(b => {
               const c = b.querySelector('.like-count');
-              if (c) c.textContent = total;
+              // Only update if button is not in optimistic-liked state to avoid flicker
+              if (c && !b.classList.contains('liked')) {
+                c.textContent = count;
+              } else if (c && b.classList.contains('liked')) {
+                // Show at least the server count (may be higher from others liking concurrently)
+                const current = parseInt(c.textContent || '0');
+                if (count > current) c.textContent = count;
+              }
             });
           }
         }),
       btns: [],
     };
   }
-  likeListeners[authorName].btns.push(btnEl);
+  likeListeners[msgId].btns.push(btnEl);
 }
 
 /* ══ ADD MESSAGE TO FEED ══ */
@@ -354,7 +378,8 @@ function addMsg({ id, name, role, score, init, msg, timestamp, own = false }) {
     if (btn && !isOwnMsg && !alreadyLiked) {
       btn.addEventListener('click', () => likeMessage(id, name, btn));
     }
-    if (btn) subscribeLikes(name, btn);
+    // Subscribe to per-message like count (keyed by msgId, not authorName)
+    if (btn) subscribeLikes(id, btn);
   }
 
   if (!userScrolled) scrollToBottom();
@@ -525,7 +550,7 @@ function attachCityListeners(db, rdb, cityName) {
 
   if (S._unsubMessages) { S._unsubMessages(); S._unsubMessages = null; }
 
-  // Unsubscribe all like listeners from previous city
+  // Unsubscribe all per-message like listeners from previous city session
   Object.values(likeListeners).forEach(obj => obj.unsub && obj.unsub());
   for (const k in likeListeners) delete likeListeners[k];
 
@@ -549,7 +574,7 @@ function attachCityListeners(db, rdb, cityName) {
     .orderBy('timestamp', 'asc');
 
   S._unsubMessages = query.onSnapshot(function (snapshot) {
-    const issueUsers   = { accident: new Set(), construction: new Set(), breakdown: new Set() };
+    const issueUsers    = { accident: new Set(), construction: new Set(), breakdown: new Set() };
     const uniqueSenders = new Set();
 
     snapshot.forEach(function (doc) {

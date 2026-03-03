@@ -70,7 +70,6 @@ const S = {
   _unsubCounts: null,
   _unsubFeed:   null,
   counts:       {},
-  /* likedKeys = "currentUser__msgDocId" — one entry per liked message */
   likedKeys: new Set(JSON.parse(localStorage.getItem('tiq-sc-liked-keys') || '[]')),
 };
 
@@ -178,8 +177,7 @@ function matchShortcut(msgText) {
     trimmed.toLowerCase().includes(sc.trigger.toLowerCase()) ||
     sc.trigger.toLowerCase().includes(trimmed.toLowerCase())
   );
-  if (contains) return contains;
-  return shortcuts[0];
+  return contains || shortcuts[0];
 }
 
 function calcConf(count) {
@@ -221,12 +219,12 @@ function renderCards() {
   if (active.length === 0) return;
 
   active.forEach((sc, idx) => {
-    const count    = S.counts[sc.id] || 0;
-    const conf     = calcConf(count);
-    const isTop    = idx === 0;
-    const dotClr   = conf >= 50 ? 'var(--cg)' : 'var(--ca)';
-    const barClr   = conf >= 50 ? 'var(--cg)' : 'var(--ca)';
-    const confTxt  = conf >= 50 ? 'cg' : 'ca';
+    const count   = S.counts[sc.id] || 0;
+    const conf    = calcConf(count);
+    const isTop   = idx === 0;
+    const dotClr  = conf >= 50 ? 'var(--cg)' : 'var(--ca)';
+    const barClr  = conf >= 50 ? 'var(--cg)' : 'var(--ca)';
+    const confTxt = conf >= 50 ? 'cg' : 'ca';
     const tagsHtml = sc.tags.map(t => `<span class="tag ${t.cls}">${t.label}</span>`).join('');
 
     const card = document.createElement('div');
@@ -304,7 +302,13 @@ const feed       = document.getElementById('feed');
 const scrollBtn  = document.getElementById('scrollBtn');
 let userScrolled = false;
 const renderedIds   = new Set();
-/* likeListeners: authorName → { unsub, btns[] } */
+
+/*
+  likeListeners keyed by msgId (NOT authorName).
+  Each entry watches messageLikeCounts/{msgId} so each button
+  shows only that message's own count, fully isolated from other
+  messages by the same author and from other pages.
+*/
 const likeListeners = {};
 
 feed.addEventListener('scroll', () => {
@@ -322,11 +326,15 @@ function timeStr(ts) {
 }
 
 /* ══ LIKE A MESSAGE ══
-   message_likes/{authorName}  ← doc ID = authorName (same as enter-traffic)
-     authorName: "Driver_484"
-     likeCount:  N             ← total likes across ALL pages combined
-     lastUpdated: timestamp
-     likers/{liker}__{msgId}   ← sub-doc prevents double-liking same message
+   Dual-collection write:
+   ─────────────────────────────────────────────────────────
+   messageLikeCounts/{msgId}
+     likeCount: N              ← per-message count → drives like button UI
+
+   message_likes/{authorName}
+     authorName, likeCount     ← leaderboard total across ALL pages
+     likers/{safeKey}          ← idempotency guard, prevents double-liking
+   ─────────────────────────────────────────────────────────
 ══ */
 function likeMessage(msgId, authorName, btnEl) {
   if (!window.db) return;
@@ -350,24 +358,34 @@ function likeMessage(msgId, authorName, btnEl) {
   if (countEl) countEl.textContent = parseInt(countEl.textContent || '0') + 1;
   gsap.fromTo(btnEl,{scale:1.4},{scale:1,duration:.4,ease:'back.out(2)'});
 
-  /* Write using same modular SDK version as shortcuts.html imports */
   import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js').then(fs => {
-    const authorDocRef = fs.doc(window.db, 'message_likes', authorName);
-    const likerDocRef  = fs.doc(window.db, 'message_likes', authorName, 'likers', safeKey);
+    const msgLikeCountRef = fs.doc(window.db, 'messageLikeCounts', msgId);
+    const authorDocRef    = fs.doc(window.db, 'message_likes', authorName);
+    const likerDocRef     = fs.doc(window.db, 'message_likes', authorName, 'likers', safeKey);
 
+    // Step 1: Record liker (idempotency guard)
     fs.setDoc(likerDocRef, {
       likedAt: fs.serverTimestamp(),
       liker:   S.name,
       msgId:   msgId,
       page:    'shortcuts',
     })
-    .then(() => fs.setDoc(authorDocRef, {
-      authorName:  authorName,
-      likeCount:   fs.increment(1),
-      lastUpdated: fs.serverTimestamp(),
-    }, { merge: true }))
+    .then(() => Promise.all([
+      // Step 2a: Per-message count → shown on like button
+      fs.setDoc(msgLikeCountRef, {
+        likeCount:   fs.increment(1),
+        lastUpdated: fs.serverTimestamp(),
+      }, { merge: true }),
+
+      // Step 2b: Author leaderboard total → shown on leaderboard
+      fs.setDoc(authorDocRef, {
+        authorName:  authorName,
+        likeCount:   fs.increment(1),
+        lastUpdated: fs.serverTimestamp(),
+      }, { merge: true }),
+    ]))
     .then(() => {
-      console.log('[TrafficIQ] Like saved (shortcuts). author:', authorName);
+      console.log('[TrafficIQ] ✅ Like saved (shortcuts). msgId:', msgId, '| author:', authorName);
     })
     .catch(err => {
       console.error('[TrafficIQ] Like failed:', err);
@@ -380,25 +398,34 @@ function likeMessage(msgId, authorName, btnEl) {
   });
 }
 
-/* ══ SUBSCRIBE TO LIVE LIKE COUNT ══ */
-function subscribeLikes(authorName, btnEl) {
+/* ══ SUBSCRIBE TO LIVE LIKE COUNT ══
+   Watches messageLikeCounts/{msgId} — NOT message_likes/{authorName}.
+   Each button gets its own isolated real-time count for that specific message.
+══ */
+function subscribeLikes(msgId, btnEl) {
   import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js').then(fs => {
-    if (!likeListeners[authorName]) {
-      likeListeners[authorName] = {
+    if (!likeListeners[msgId]) {
+      likeListeners[msgId] = {
         unsub: fs.onSnapshot(
-          fs.doc(window.db, 'message_likes', authorName),
+          fs.doc(window.db, 'messageLikeCounts', msgId),
           snap => {
-            const total = snap.exists() ? (snap.data().likeCount || 0) : 0;
-            likeListeners[authorName]?.btns.forEach(b => {
+            const count = snap.exists() ? (snap.data().likeCount || 0) : 0;
+            likeListeners[msgId]?.btns.forEach(b => {
               const c = b.querySelector('.like-count');
-              if (c) c.textContent = total;
+              if (!c) return;
+              if (b.classList.contains('liked')) {
+                // Optimistic-liked: only update upward to avoid flicker
+                if (count > parseInt(c.textContent || '0')) c.textContent = count;
+              } else {
+                c.textContent = count;
+              }
             });
           }
         ),
         btns: [],
       };
     }
-    likeListeners[authorName].btns.push(btnEl);
+    likeListeners[msgId].btns.push(btnEl);
   });
 }
 
@@ -447,20 +474,19 @@ function addMsg({ id, name, role, badge, badgeLbl, init, msg, votes=0, own=false
       </div>
     </div>`;
 
-  /* Upvote handler (unchanged) */
   el.querySelector('.upvote-btn')?.addEventListener('click', function() {
     const voted = this.classList.toggle('voted');
     this.querySelector('.vc').textContent = parseInt(this.dataset.base) + (voted?1:0);
     gsap.fromTo(this,{scale:.88},{scale:1,duration:.3,ease:'back.out(2)'});
   });
 
-  /* Like handler */
   if (!isTemp) {
     const btn = el.querySelector('.like-btn');
     if (btn && !isOwnMsg && !alreadyLiked) {
       btn.addEventListener('click', () => likeMessage(id, name, btn));
     }
-    if (btn) subscribeLikes(name, btn);
+    // Key: pass id (msgId), NOT name (authorName)
+    if (btn) subscribeLikes(id, btn);
   }
 
   feed.appendChild(el);

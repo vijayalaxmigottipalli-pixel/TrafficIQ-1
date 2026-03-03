@@ -10,9 +10,7 @@
   <link rel="stylesheet" href="enter-traffic.css"/>
 </head>
 <body>
-
 <canvas id="bg"></canvas>
-
 <header id="topbar">
   <div class="tb-l">
     <a href="dashboard.html" class="back-btn">
@@ -82,14 +80,12 @@
 </div>
 
 <div id="mobOverlay" onclick="togglePanel()"></div>
-
 <!-- Firebase compat SDKs -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-analytics-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-
 <script>
   const firebaseConfig = {
     apiKey:            "AIzaSyAKGbbt_ARGWep8ggPuk_iE6R1xALkmJM8",
@@ -101,20 +97,12 @@
     appId:             "1:97313655693:web:fee4304d7815bdceaf0bc4",
     measurementId:     "G-N8CC0BE6HS"
   };
-
   firebase.initializeApp(firebaseConfig);
   firebase.analytics();
-
-  /* Auth — for getting current user's email */
   window._auth = firebase.auth();
-
-  /* Firestore — for messages */
-  window._db  = firebase.firestore();
-
-  /* Realtime Database — for presence (supports onDisconnect properly) */
-  window._rdb = firebase.database();
+  window._db   = firebase.firestore();
+  window._rdb  = firebase.database();
 </script>
-
 <script src="enter-traffic.js"></script>
 </body>
 </html>

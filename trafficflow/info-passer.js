@@ -106,12 +106,7 @@
   window._bgMat = mat;
 })();
 
-/* ══ CITY RESOLUTION ══
-   Priority: URL param ?city=  →  localStorage tiq-city  →  'Bhimavaram'
-   Converts city name → safe Firestore collection key:
-     "RTC Bus Stand" → "alerts_rtc_bus_stand"
-   This means each city/location gets its OWN isolated alert feed.
-══════════════════════════════════════════════════════════════════ */
+/* ══ CITY RESOLUTION ══ */
 function getCityFromURL() {
   const raw = new URLSearchParams(window.location.search).get('city');
   return raw ? decodeURIComponent(raw) : null;
@@ -132,14 +127,19 @@ const S = {
   name:       localStorage.getItem('tiq-name')  || 'You',
   city:       resolveCity(),
   collection: 'info-passer_messages',
+  /* like persistence — keyed separately from other pages */
+  likedKeys:  new Set(JSON.parse(localStorage.getItem('tiq-ip-liked-keys') || '[]')),
 };
 
-/* ── Set city label immediately on script parse, then again on DOMContentLoaded ── */
+function persistLiked() {
+  localStorage.setItem('tiq-ip-liked-keys', JSON.stringify([...S.likedKeys]));
+}
+
+/* ── City label ── */
 function applyCityLabel() {
   const cityLabel = document.getElementById('cityLabel');
   if (cityLabel) cityLabel.textContent = S.city;
 }
-
 applyCityLabel();
 window.addEventListener('DOMContentLoaded', applyCityLabel);
 
@@ -173,9 +173,9 @@ function renderRanked() {
   list.slice(0, 8).forEach((item, i) => {
     const def = ISSUE_TYPES[item.type];
     if (!def) return;
-    const urgClass  = `urg-${def.urg}`;
+    const urgClass   = `urg-${def.urg}`;
     const badgeClass = `badge-${def.urg}`;
-    const rankNum   = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`;
+    const rankNum    = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`;
 
     const card = document.createElement('div');
     card.className = `rank-card ${urgClass}${i === 0 ? ' rank-1' : ''}`;
@@ -230,19 +230,110 @@ function scrollToBottom() {
 }
 
 function timeStr(ts) {
-  // If a Firestore timestamp is passed, use it; otherwise use current time
   const d = (ts && ts.toDate) ? ts.toDate() : new Date();
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
 const urgLabel = { red:'ACCIDENT', amber:'BLOCKED', yel:'SLOW', blue:'INFO' };
 
-function addAlert({ name, role, init, msg, urg = 'blue', own = false, ts = null }) {
+/* ══ LIKE A MESSAGE ══
+   Dual-collection write — mirrors shortcuts.js exactly:
+     messageLikeCounts/{msgId}  → per-message count (like button UI)
+     message_likes/{authorName} → leaderboard total across all pages
+   ══════════════════════════════════════════════════════════════════ */
+function likeMessage(msgId, authorName, btnEl) {
+  const likeKey = S.name + '__' + msgId;
+  if (S.likedKeys.has(likeKey)) return;
+
+  if (authorName === S.name) {
+    gsap.fromTo(btnEl, { x: -4 }, { x: 0, duration: .3, ease: 'elastic.out(1,.4)', clearProps: 'x' });
+    return;
+  }
+
+  const safeKey = (S.name + '__' + msgId).replace(/[^a-zA-Z0-9_\-]/g, '_');
+
+  /* Optimistic UI */
+  S.likedKeys.add(likeKey);
+  persistLiked();
+  btnEl.classList.add('liked');
+  btnEl.disabled = true;
+  const countEl = btnEl.querySelector('.like-count');
+  if (countEl) countEl.textContent = parseInt(countEl.textContent || '0') + 1;
+  gsap.fromTo(btnEl, { scale: 1.4 }, { scale: 1, duration: .4, ease: 'back.out(2)' });
+
+  const { doc, setDoc, increment, serverTimestamp } = window.fb;
+
+  const msgLikeCountRef = doc(window.db, 'messageLikeCounts', msgId);
+  const authorDocRef    = doc(window.db, 'message_likes', authorName);
+  const likerDocRef     = doc(window.db, 'message_likes', authorName, 'likers', safeKey);
+
+  setDoc(likerDocRef, {
+    likedAt: serverTimestamp(), liker: S.name, msgId, page: 'info-passer',
+  })
+  .then(() => Promise.all([
+    setDoc(msgLikeCountRef,
+      { likeCount: increment(1), lastUpdated: serverTimestamp() },
+      { merge: true }),
+    setDoc(authorDocRef,
+      { authorName, likeCount: increment(1), lastUpdated: serverTimestamp() },
+      { merge: true }),
+  ]))
+  .then(() => console.log('[TrafficIQ] ✅ Like saved (info-passer). msgId:', msgId, '| author:', authorName))
+  .catch(err => {
+    console.error('[TrafficIQ] Like failed:', err);
+    S.likedKeys.delete(likeKey);
+    persistLiked();
+    btnEl.classList.remove('liked');
+    btnEl.disabled = false;
+    if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent || '1') - 1);
+  });
+}
+
+/* ══ LIVE LIKE COUNT LISTENER ══
+   Watches messageLikeCounts/{msgId} — isolated per message.
+   ══════════════════════════════════════════════════════════ */
+const likeListeners = {};
+
+function subscribeLikes(msgId, btnEl) {
+  const { doc, onSnapshot } = window.fb;
+  if (!likeListeners[msgId]) {
+    likeListeners[msgId] = {
+      unsub: onSnapshot(
+        doc(window.db, 'messageLikeCounts', msgId),
+        snap => {
+          const count = snap.exists() ? (snap.data().likeCount || 0) : 0;
+          likeListeners[msgId]?.btns.forEach(b => {
+            const c = b.querySelector('.like-count');
+            if (!c) return;
+            if (b.classList.contains('liked')) {
+              if (count > parseInt(c.textContent || '0')) c.textContent = count;
+            } else {
+              c.textContent = count;
+            }
+          });
+        }
+      ),
+      btns: [],
+    };
+  }
+  likeListeners[msgId].btns.push(btnEl);
+}
+
+/* ══ ADD ALERT ══ */
+function addAlert({ id, name, role, init, msg, urg = 'blue', own = false, ts = null }) {
+  const isTemp       = !id || id.startsWith('temp-');
+  const likeKey      = S.name + '__' + id;
+  const alreadyLiked = !isTemp && S.likedKeys.has(likeKey);
+  const isOwnMsg     = name === S.name;
+
+  const roleLabel = { g: '✓ Verified', b: 'Active User', r: '⚠ Flagged' };
+
   const el = document.createElement('div');
   el.className = `msg${own ? ' own' : ''}`;
-  const roleLabel = { g: '✓ Verified', b: 'Active User', r: '⚠ Flagged' };
+  if (id) el.dataset.docId = id;
+
   el.innerHTML = `
-    <div class="av ${role}" data-tip="${name} · ${roleLabel[role]}">${init}</div>
+    <div class="av ${role}" data-tip="${name} · ${roleLabel[role] || 'User'}">${init}</div>
     <div class="msg-body">
       <div class="msg-meta">
         <span class="msg-name">${name}</span>
@@ -250,7 +341,43 @@ function addAlert({ name, role, init, msg, urg = 'blue', own = false, ts = null 
         <span class="msg-time">${timeStr(ts)}</span>
       </div>
       <div class="bubble">${msg}</div>
+      <div class="msg-actions">
+        <button class="upvote-btn" data-base="0">▲ <span class="vc">0</span></button>
+        ${!isTemp ? `
+        <button
+          class="like-btn${alreadyLiked ? ' liked' : ''}${isOwnMsg ? ' own-msg' : ''}"
+          title="${isOwnMsg ? "Can't like your own message" : alreadyLiked ? 'Already liked' : 'Like this alert'}"
+          ${alreadyLiked || isOwnMsg ? 'disabled' : ''}
+        >
+          <svg class="like-ico" viewBox="0 0 24 24"
+            fill="${alreadyLiked ? 'currentColor' : 'none'}"
+            stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
+            <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+          </svg>
+          <span class="like-count">0</span>
+        </button>
+        ${alreadyLiked ? '<span class="liked-label">Liked ✓</span>' : ''}` : ''}
+      </div>
     </div>`;
+
+  /* upvote */
+  el.querySelector('.upvote-btn')?.addEventListener('click', function () {
+    const voted = this.classList.toggle('voted');
+    this.querySelector('.vc').textContent = parseInt(this.dataset.base) + (voted ? 1 : 0);
+    gsap.fromTo(this, { scale: .88 }, { scale: 1, duration: .3, ease: 'back.out(2)' });
+  });
+
+  /* like */
+  if (!isTemp) {
+    const btn = el.querySelector('.like-btn');
+    if (btn && !isOwnMsg && !alreadyLiked) {
+      btn.addEventListener('click', () => likeMessage(id, name, btn));
+    }
+    if (btn) subscribeLikes(id, btn);
+  }
+
   feed.appendChild(el);
   if (!userScrolled) scrollToBottom();
   else scrollBtn.classList.add('show');
@@ -292,19 +419,19 @@ async function sendMsg() {
 
   const { collection, doc, setDoc, increment, serverTimestamp } = window.fb;
 
-  // ✅ Write to info-passer_messages, city field ensures correct filtering
   const newDocRef = doc(collection(window.db, 'info-passer_messages'));
 
-  // Pre-mark so onSnapshot doesn't double-render our own message
+  /* Pre-mark so onSnapshot doesn't double-render our own message */
   renderedDocIds.add(newDocRef.id);
 
   addAlert({
+    id:   newDocRef.id,
     name: S.name,
     role: 'b',
     init: S.name.substring(0, 2).toUpperCase(),
     msg:  txt,
     urg,
-    own:  true
+    own:  true,
   });
   trackUser(S.name);
   updateRanked(detected, loc);
@@ -321,9 +448,8 @@ async function sendMsg() {
     createdAt: serverTimestamp()
   });
 
-  // 🔥 Update left panel counters
-  const leftPanelRef = doc(window.db, "info-passer_leftpanel", loc);
-
+  /* Update left panel counters */
+  const leftPanelRef = doc(window.db, 'info-passer_leftpanel', loc);
   await setDoc(leftPanelRef, {
     totalAlerts: increment(1),
     [`${detected}Count`]: increment(1),
@@ -334,8 +460,7 @@ async function sendMsg() {
 
   inp.value = '';
   pendingType = 'blue';
-  const sendBtn = document.querySelector('.send-btn');
-  gsap.fromTo(sendBtn, { scale: .88 }, { scale: 1, duration: .25, ease: 'back.out(2)' });
+  gsap.fromTo(document.querySelector('.send-btn'), { scale: .88 }, { scale: 1, duration: .25, ease: 'back.out(2)' });
 }
 
 document.getElementById('chatInp').addEventListener('keydown', e => {
@@ -373,59 +498,57 @@ document.addEventListener('mouseout', e => {
 });
 
 /* ══ GSAP ENTRANCE ══ */
-gsap.to('#topbar', { y: 0, opacity: 1, duration: .6, ease: 'power3.out', delay: .1 });
-gsap.to('#panel',  { x: 0, opacity: 1, duration: .75, ease: 'power3.out', delay: .25 });
-gsap.from('.stream', { opacity: 0, duration: .5, ease: 'power2.out', delay: .35 });
+gsap.to('#topbar',  { y: 0, opacity: 1, duration: .6,  ease: 'power3.out', delay: .1  });
+gsap.to('#panel',   { x: 0, opacity: 1, duration: .75, ease: 'power3.out', delay: .25 });
+gsap.from('.stream',{ opacity: 0, duration: .5, ease: 'power2.out', delay: .35 });
 
-/* ══ FIREBASE REAL-TIME LISTENER ══
-   ✅ FIX: onSnapshot now rebuilds BOTH the chat feed AND the ranked panel
-   on every update (including initial page load / refresh).
-   Previously only renderRanked() was called — messages were never re-drawn.
-══════════════════════════════════════════════════════════════════════════ */
+/* ══ FIREBASE REAL-TIME LISTENER ══ */
 const { collection, onSnapshot, query, orderBy } = window.fb;
 
-// Query all messages ordered by time — city filtering done client-side
-// This avoids needing a Firestore composite index on (city + createdAt)
 const q = query(
   collection(window.db, S.collection),
-  orderBy("createdAt")
+  orderBy('createdAt')
 );
 
 onSnapshot(q, (snapshot) => {
-
-  // ── Reset ranked data ──
+  /* Reset ranked data */
   for (let key in ranked) delete ranked[key];
 
-  // ── Full feed rebuild — handles adds, deletes, and edits correctly ──
+  /* Full feed rebuild */
   document.getElementById('feed').innerHTML = '';
+
+  /* Tear down all existing like listeners to avoid memory leaks */
+  Object.values(likeListeners).forEach(entry => {
+    try { entry.unsub?.(); } catch(_) {}
+  });
+  for (let k in likeListeners) delete likeListeners[k];
+
   renderedDocIds.clear();
   seenUsers.clear();
   document.getElementById('tbUsers').textContent = 0;
 
   const counts = {};
 
-  // snapshot.docs always reflects the CURRENT state of the collection
-  // so deleting a doc in Firebase Console will re-fire this and it won't
-  // be in snapshot.docs — meaning it simply won't be re-rendered. ✅
   snapshot.docs.forEach((docSnap) => {
     const data = docSnap.data();
 
-    // ✅ Client-side city filter — only show messages for current city
+    /* Client-side city filter */
     if (data.city !== S.city) return;
 
-    const type = data.type || "slow";
+    const type = data.type || 'slow';
     const loc  = data.loc  || S.city;
-    const key  = type + ":" + loc;
+    const key  = type + ':' + loc;
 
     renderedDocIds.add(docSnap.id);
     addAlert({
-      name: data.name || "Unknown",
-      role: data.role || "b",
-      init: data.init || (data.name || "?").substring(0, 2).toUpperCase(),
-      msg:  data.msg  || "",
-      urg:  data.urg  || "blue",
+      id:   docSnap.id,
+      name: data.name || 'Unknown',
+      role: data.role || 'b',
+      init: data.init || (data.name || '?').substring(0, 2).toUpperCase(),
+      msg:  data.msg  || '',
+      urg:  data.urg  || 'blue',
       own:  data.name === S.name,
-      ts:   data.createdAt || null
+      ts:   data.createdAt || null,
     });
     trackUser(data.name);
 
@@ -433,9 +556,9 @@ onSnapshot(q, (snapshot) => {
     counts[key].count++;
   });
 
-  // ── Rebuild ranked from fresh counts ──
+  /* Rebuild ranked from fresh counts */
   Object.values(counts).forEach(item => {
-    ranked[item.type + ":" + item.loc] = item;
+    ranked[item.type + ':' + item.loc] = item;
   });
 
   renderRanked();

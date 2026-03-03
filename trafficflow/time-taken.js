@@ -1,7 +1,4 @@
-/* TrafficIQ — time-taken.js
-   City-aware real-time delay dashboard — Firestore connected
-   Collections: timeTakenMessages, timeTakenVotes
-   ─────────────────────────────────── */
+/* TrafficIQ — time-taken.js */
 'use strict';
 
 /* ══ THREE.JS HIGHWAY BACKGROUND ══ */
@@ -62,7 +59,7 @@
 })();
 
 
-/* ══ VALID CITY NAMES — must exactly match your Firestore document IDs ══ */
+/* ══ VALID CITIES ══ */
 const VALID_CITIES = [
   'Bhimavaram Railway Station',
   'Government Hospital',
@@ -71,24 +68,16 @@ const VALID_CITIES = [
   'Vishnu College',
 ];
 
-/* ══ STATE ══
-   HOW CITY IS PASSED:
-   From dashboard, before navigating to time-taken.html, do:
-     localStorage.setItem('tiq-city', 'Bhimavaram Railway Station')
-   The city name must exactly match one of the 5 VALID_CITIES above.
-*/
+/* ══ STATE ══ */
 const S = {
   theme:        localStorage.getItem('tiq-theme') || 'dark',
-  city:         (function() {
-                  // 1. Try URL param: time-taken.html?city=Bhimavaram%20Railway%20Station
-                  const urlParam = new URLSearchParams(location.search).get('city');
-                  if (urlParam && VALID_CITIES.includes(urlParam)) return urlParam;
-                  // 2. Try localStorage
-                  const stored = localStorage.getItem('tiq-city');
-                  if (stored && VALID_CITIES.includes(stored)) return stored;
-                  // 3. Default to first city
-                  return VALID_CITIES[0];
-                })(),
+  city: (function() {
+    const urlParam = new URLSearchParams(location.search).get('city');
+    if (urlParam && VALID_CITIES.includes(urlParam)) return urlParam;
+    const stored = localStorage.getItem('tiq-city');
+    if (stored && VALID_CITIES.includes(stored)) return stored;
+    return VALID_CITIES[0];
+  })(),
   name:         localStorage.getItem('tiq-name') || 'You',
   votes:        { long: 0, med: 0, short: 0 },
   prevWinner:   null,
@@ -97,9 +86,23 @@ const S = {
   seenMsgIds:   new Set(),
   _unsubMsgs:   null,
   _unsubVotes:  null,
+
+  /* likedKeys = "currentUser__msgDocId" — one entry per liked message */
+  likedKeys: new Set(JSON.parse(localStorage.getItem('tiq-tt-liked-keys') || '[]')),
 };
 
+function persistLiked() {
+  localStorage.setItem('tiq-tt-liked-keys', JSON.stringify([...S.likedKeys]));
+}
+
 const VOTE_WEIGHTS = { long: 75, med: 30, short: 7 };
+
+/*
+  likeListeners: keyed by msgId (NOT authorName).
+  Each entry watches messageLikeCounts/{msgId} for the per-message count,
+  completely isolated from other pages and other messages by the same author.
+*/
+const likeListeners = {};
 
 
 /* ══ THEME ══ */
@@ -236,7 +239,7 @@ function updateTrend(winner) {
 }
 
 
-/* ══ MINI GRAPH (Canvas) ══ */
+/* ══ MINI GRAPH ══ */
 function redrawGraph() {
   const canvas = document.getElementById('graphCanvas');
   if (!canvas) return;
@@ -311,6 +314,113 @@ function redrawGraph() {
 }
 
 
+/* ══ LIKE A MESSAGE ══
+   Dual-collection write — identical pattern to enter-traffic.js and shortcuts.js:
+   ─────────────────────────────────────────────────────────
+   messageLikeCounts/{msgId}
+     likeCount: N              ← per-message count → drives the like button UI
+
+   message_likes/{authorName}
+     authorName, likeCount     ← leaderboard total across ALL pages
+     likers/{safeKey}          ← idempotency guard, prevents double-liking
+   ─────────────────────────────────────────────────────────
+══ */
+function likeMessage(msgId, authorName, btnEl) {
+  if (!window._db) return;
+
+  const likeKey = S.name + '__' + msgId;
+  if (S.likedKeys.has(likeKey)) return;
+
+  if (authorName === S.name) {
+    gsap.fromTo(btnEl, { x: -4 }, { x: 0, duration: .3, ease: 'elastic.out(1,.4)', clearProps: 'x' });
+    return;
+  }
+
+  const safeKey = (S.name + '__' + msgId).replace(/[^a-zA-Z0-9_\-]/g, '_');
+
+  /* Optimistic UI */
+  S.likedKeys.add(likeKey);
+  persistLiked();
+  btnEl.classList.add('liked');
+  btnEl.disabled = true;
+  const countEl = btnEl.querySelector('.like-count');
+  if (countEl) countEl.textContent = parseInt(countEl.textContent || '0') + 1;
+  gsap.fromTo(btnEl, { scale: 1.4 }, { scale: 1, duration: .4, ease: 'back.out(2)' });
+
+  import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(fs => {
+    const msgLikeCountRef = fs.doc(window._db, 'messageLikeCounts', msgId);
+    const authorDocRef    = fs.doc(window._db, 'message_likes', authorName);
+    const likerDocRef     = fs.doc(window._db, 'message_likes', authorName, 'likers', safeKey);
+
+    // Step 1: Record liker (idempotency guard)
+    fs.setDoc(likerDocRef, {
+      likedAt: fs.serverTimestamp(),
+      liker:   S.name,
+      msgId:   msgId,
+      page:    'time-taken',
+    })
+    .then(() => Promise.all([
+      // Step 2a: Per-message count → shown on like button
+      fs.setDoc(msgLikeCountRef, {
+        likeCount:   fs.increment(1),
+        lastUpdated: fs.serverTimestamp(),
+      }, { merge: true }),
+
+      // Step 2b: Author leaderboard total → shown on leaderboard
+      fs.setDoc(authorDocRef, {
+        authorName:  authorName,
+        likeCount:   fs.increment(1),
+        lastUpdated: fs.serverTimestamp(),
+      }, { merge: true }),
+    ]))
+    .then(() => {
+      console.log('[TrafficIQ] ✅ Like saved (time-taken). msgId:', msgId, '| author:', authorName);
+    })
+    .catch(err => {
+      console.error('[TrafficIQ] Like failed:', err);
+      S.likedKeys.delete(likeKey);
+      persistLiked();
+      btnEl.classList.remove('liked');
+      btnEl.disabled = false;
+      if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent || '1') - 1);
+    });
+  });
+}
+
+
+/* ══ SUBSCRIBE TO LIVE LIKE COUNT ══
+   Watches messageLikeCounts/{msgId} — NOT message_likes/{authorName}.
+   Each button shows only that specific message's like count,
+   completely isolated from other pages and other messages.
+══ */
+function subscribeLikes(msgId, btnEl) {
+  import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(fs => {
+    if (!likeListeners[msgId]) {
+      likeListeners[msgId] = {
+        unsub: fs.onSnapshot(
+          fs.doc(window._db, 'messageLikeCounts', msgId),
+          snap => {
+            const count = snap.exists() ? (snap.data().likeCount || 0) : 0;
+            likeListeners[msgId]?.btns.forEach(b => {
+              const c = b.querySelector('.like-count');
+              if (!c) return;
+              if (b.classList.contains('liked')) {
+                // Optimistic-liked: only update upward to avoid flicker
+                if (count > parseInt(c.textContent || '0')) c.textContent = count;
+              } else {
+                c.textContent = count;
+              }
+            });
+          }
+        ),
+        btns: [],
+      };
+    }
+    likeListeners[msgId].btns.push(btnEl);
+  });
+}
+
+
 /* ══ FEED HELPERS ══ */
 const feed      = document.getElementById('feed');
 const scrollBtn = document.getElementById('scrollBtn');
@@ -341,9 +451,13 @@ function addMsg({ id = null, name, role, init, vote = null, msg, own = false, ts
   el.className = `msg${own ? ' own' : ''}`;
   if (id) el.dataset.msgId = id;
 
-  const chipLabel = { long: '🔴 1+ hr', med: '🟡 30 min', short: '🟢 <10 min' };
-  const chip      = vote ? `<span class="vote-chip ${vote}">${chipLabel[vote]}</span>` : '';
-  const bubClass  = vote ? `bubble ${vote}-bub` : 'bubble';
+  const chipLabel  = { long: '🔴 1+ hr', med: '🟡 30 min', short: '🟢 <10 min' };
+  const chip       = vote ? `<span class="vote-chip ${vote}">${chipLabel[vote]}</span>` : '';
+  const bubClass   = vote ? `bubble ${vote}-bub` : 'bubble';
+  const isTemp     = !id || id.startsWith('temp-');
+  const likeKey    = S.name + '__' + id;
+  const alreadyLiked = !isTemp && S.likedKeys.has(likeKey);
+  const isOwnMsg   = name === S.name;
 
   el.innerHTML = `
     <div class="av ${role}" data-tip="${name}">${init}</div>
@@ -354,7 +468,33 @@ function addMsg({ id = null, name, role, init, vote = null, msg, own = false, ts
         <span class="msg-time">${timeStr(ts)}</span>
       </div>
       <div class="${bubClass}">${msg}</div>
+      ${!isTemp ? `
+      <div class="like-row">
+        <button
+          class="like-btn${alreadyLiked ? ' liked' : ''}${isOwnMsg ? ' own-msg' : ''}"
+          title="${isOwnMsg ? "Can't like your own message" : alreadyLiked ? 'Already liked' : 'Like this report'}"
+          ${alreadyLiked || isOwnMsg ? 'disabled' : ''}
+        >
+          <svg class="like-ico" viewBox="0 0 24 24" fill="${alreadyLiked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
+            <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+          </svg>
+          <span class="like-count">0</span>
+        </button>
+        ${alreadyLiked ? '<span class="liked-label">Liked ✓</span>' : ''}
+      </div>` : ''}
     </div>`;
+
+  /* Like handler — pass id (msgId), NOT name (authorName) */
+  if (!isTemp) {
+    const btn = el.querySelector('.like-btn');
+    if (btn && !isOwnMsg && !alreadyLiked) {
+      btn.addEventListener('click', () => likeMessage(id, name, btn));
+    }
+    // Subscribe by msgId so each button shows its own isolated count
+    if (btn) subscribeLikes(id, btn);
+  }
+
   feed.appendChild(el);
   if (!userScrolled) scrollToBottom();
   else scrollBtn.classList.add('show');
@@ -376,13 +516,10 @@ function updateCityUI(cityName) {
 }
 
 
-/* ══ OPTIMISTIC MESSAGE DISPLAY
-   Shows message instantly on screen, then Firestore listener
-   deduplicates it when the server confirms it.
-══ */
+/* ══ OPTIMISTIC MESSAGE ══ */
 function showMsgOptimistic(name, msg, vote) {
   const tempId = 'temp-' + Date.now();
-  S.seenMsgIds.add(tempId); // reserve this slot
+  S.seenMsgIds.add(tempId);
   addMsg({
     id:   tempId,
     name: name,
@@ -409,6 +546,10 @@ function attachCityListeners(db, cityName) {
   if (S._unsubMsgs)  S._unsubMsgs();
   if (S._unsubVotes) S._unsubVotes();
 
+  // Unsubscribe all per-message like listeners
+  Object.values(likeListeners).forEach(obj => obj.unsub && obj.unsub());
+  for (const k in likeListeners) delete likeListeners[k];
+
   // Reset for new city
   feed.innerHTML  = '';
   S.seenMsgIds    = new Set();
@@ -417,12 +558,7 @@ function attachCityListeners(db, cityName) {
   S.prevWinner    = null;
   updatePoll();
 
-  /* ── 1. timeTakenMessages
-     NOTE: Firestore requires a composite index for where+orderBy.
-     If messages don't load, go to Firebase Console → Firestore →
-     Indexes → Add index: collection=timeTakenMessages,
-     fields: city (Ascending), timestamp (Ascending)
-  ── */
+  /* ── timeTakenMessages ── */
   const msgsQ = query(
     collection(db, 'timeTakenMessages'),
     where('city', '==', cityName),
@@ -437,16 +573,11 @@ function attachCityListeners(db, cityName) {
           const d   = change.doc.data();
           const own = d.name === S.name;
 
-          // If this is our own message that we already showed optimistically, skip
           if (own) {
-            // Remove any temp optimistic message with same content so server version takes over
             const tempMsgs = feed.querySelectorAll('[data-msg-id^="temp-"]');
             tempMsgs.forEach(el => {
               const bubble = el.querySelector('.bubble');
-              if (bubble && bubble.textContent === d.message) {
-                el.remove();
-                // Don't add to seenMsgIds so addMsg below renders it fresh
-              }
+              if (bubble && bubble.textContent === d.message) el.remove();
             });
           }
 
@@ -465,7 +596,6 @@ function attachCityListeners(db, cityName) {
     },
     (err) => {
       console.error('Messages listener error:', err);
-      // If index error, show a helper message in feed
       if (err.code === 'failed-precondition') {
         const div = document.createElement('div');
         div.style.cssText = 'padding:12px 18px;font-size:.75rem;color:var(--ca);text-align:center;';
@@ -475,7 +605,7 @@ function attachCityListeners(db, cityName) {
     }
   );
 
-  /* ── 2. timeTakenVotes — document ID = exact city name ── */
+  /* ── timeTakenVotes ── */
   const votesRef = doc(db, 'timeTakenVotes', cityName);
 
   S._unsubVotes = onSnapshot(votesRef,
@@ -498,7 +628,7 @@ function attachCityListeners(db, cityName) {
         name,
         message:   msg,
         voteType:  vote || null,
-        city:      cityName,         // ← stores city name for filtering
+        city:      cityName,
         timestamp: serverTimestamp(),
       });
       if (vote) {
@@ -542,27 +672,19 @@ function castVote(key, btn) {
   };
   const msg = msgs[key][Math.floor(Math.random() * msgs[key].length)];
 
-  // Show instantly on screen
   showMsgOptimistic(S.name, msg, key);
-
-  // Save to Firestore
   if (window._saveToFirestore) window._saveToFirestore(S.name, msg, key);
 }
 
 
-/* ══ TRIGGER SEND — fills textbox instead of sending directly ══ */
+/* ══ TRIGGER SEND ══ */
 function trigSend(btn) {
   const msg  = btn.dataset.msg;
   const vote = btn.dataset.vote;
-
-  // Fill the chat input box
-  const inp = document.getElementById('chatInp');
-  inp.value = msg;
+  const inp  = document.getElementById('chatInp');
+  inp.value  = msg;
   inp.focus();
-
-  // Store the vote type so sendMsg() can use it
   inp.dataset.pendingVote = vote || '';
-
   gsap.fromTo(btn, { scale: .9 }, { scale: 1, duration: .3, ease: 'back.out(2)' });
 }
 
@@ -573,17 +695,13 @@ function sendMsg() {
   const txt  = inp.value.trim();
   if (!txt) return;
 
-  // Pick up pending vote from trigger if any
   const vote = inp.dataset.pendingVote || null;
   inp.value = '';
   inp.dataset.pendingVote = '';
 
   gsap.fromTo('.send-btn', { scale: .88 }, { scale: 1, duration: .28, ease: 'back.out(2)' });
 
-  // Show instantly on screen
   showMsgOptimistic(S.name, txt, vote || null);
-
-  // Save to Firestore
   if (window._saveToFirestore) window._saveToFirestore(S.name, txt, vote || null);
 }
 

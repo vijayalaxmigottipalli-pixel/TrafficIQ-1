@@ -266,3 +266,19 @@ body{animation:pgIn .65s ease both}
   .tb-stat{display:none}.trig{font-size:.67rem;padding:4px 9px}
 }
 ::selection{background:rgba(0,207,255,.2)}
+/* ══ LIKE ROW ══ */
+.like-row{display:flex;align-items:center;gap:6px;margin-top:5px;padding-left:2px}
+.msg.own .like-row{justify-content:flex-end;padding-left:0;padding-right:2px}
+.like-btn{display:inline-flex;align-items:center;gap:4px;background:transparent;border:1px solid var(--bdr);border-radius:99px;padding:3px 9px 3px 6px;cursor:pointer;color:var(--sub);font-family:'Plus Jakarta Sans',sans-serif;font-size:.65rem;font-weight:600;transition:color var(--e),background var(--e),border-color var(--e),transform .15s,box-shadow var(--e);position:relative;overflow:hidden}
+.like-btn::before{content:'';position:absolute;inset:0;background:rgba(0,207,255,.08);transform:scale(0);border-radius:99px;transition:transform .35s cubic-bezier(.4,0,.2,1)}
+.like-btn:not(:disabled):hover{color:var(--c);border-color:var(--c);background:var(--glow);transform:translateY(-1px);box-shadow:0 3px 10px var(--glow)}
+.like-btn:not(:disabled):hover::before{transform:scale(1)}
+.like-btn:not(:disabled):active{transform:scale(.9)}
+.like-btn.liked{color:var(--c);border-color:rgba(0,207,255,.45);background:rgba(0,207,255,.1);cursor:default}
+[data-theme="light"] .like-btn.liked{border-color:rgba(26,115,232,.45);background:rgba(26,115,232,.08)}
+.like-btn.own-msg{opacity:.35;cursor:not-allowed}
+.like-ico{width:11px;height:11px;flex-shrink:0;transition:fill .2s,stroke .2s}
+.like-btn.liked .like-ico{fill:var(--c);stroke:var(--c)}
+.like-count{font-variant-numeric:tabular-nums;min-width:8px;text-align:center}
+.liked-label{font-size:.6rem;font-weight:600;color:var(--cg);letter-spacing:.04em;animation:likedPop .35s cubic-bezier(.4,0,.2,1) both}
+@keyframes likedPop{from{opacity:0;transform:scale(.7) translateY(4px)}to{opacity:1;transform:scale(1) translateY(0)}}

@@ -1,7 +1,8 @@
-/* TrafficIQ — time-taken.css
+/* TrafficIQ — enter-traffics.css
    Design system identical to enter-traffic.css
    Additions: decision panel, vote bar, risk ring,
-   majority cards, recommendation badge, vote btns
+   majority cards, recommendation badge, vote btns,
+   like button system
    ─────────────────────────────────────────────── */
 :root {
   --c:#00cfff; --c2:#ff8c42; --cg:#22c55e; --cr:#ef4444; --ca:#f59e0b;
@@ -122,16 +123,9 @@ body{animation:pgIn .65s ease both}
   display:flex;flex-direction:column;align-items:center;gap:5px;
   cursor:default;transition:all .4s cubic-bezier(.4,0,.2,1);
 }
-.maj-card.go{
-  background:rgba(34,197,94,.07);
-  border-color:rgba(34,197,94,.2);
-}
-.maj-card.avoid{
-  background:rgba(239,68,68,.07);
-  border-color:rgba(239,68,68,.2);
-}
+.maj-card.go{background:rgba(34,197,94,.07);border-color:rgba(34,197,94,.2)}
+.maj-card.avoid{background:rgba(239,68,68,.07);border-color:rgba(239,68,68,.2)}
 
-/* Dominant = glowing + pulsing */
 .maj-card.dominant{animation:majPulse 2.2s ease infinite}
 .maj-card.go.dominant{
   background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.55);
@@ -176,8 +170,7 @@ body{animation:pgIn .65s ease both}
 
 .vb-track{
   height:12px;border-radius:99px;overflow:hidden;
-  background:rgba(255,255,255,.06);
-  display:flex;
+  background:rgba(255,255,255,.06);display:flex;
 }
 .vb-fill-go{
   height:100%;background:linear-gradient(90deg,#16a34a,#22c55e);
@@ -222,21 +215,16 @@ body{animation:pgIn .65s ease both}
 .rec-badge{
   display:flex;align-items:center;gap:10px;
   padding:11px 14px;border-radius:var(--r);
-  border:1.5px solid var(--bdr);
-  background:var(--card);
+  border:1.5px solid var(--bdr);background:var(--card);
   transition:all .45s cubic-bezier(.4,0,.2,1);
 }
 .rec-badge.go-rec{
-  border-color:rgba(34,197,94,.45);
-  background:rgba(34,197,94,.07);
-  box-shadow:0 0 18px var(--go-glow);
-  animation:recPulse 2.5s ease infinite;
+  border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.07);
+  box-shadow:0 0 18px var(--go-glow);animation:recPulse 2.5s ease infinite;
 }
 .rec-badge.avoid-rec{
-  border-color:rgba(239,68,68,.45);
-  background:rgba(239,68,68,.07);
-  box-shadow:0 0 18px var(--avoid-glow);
-  animation:recPulse 2.5s ease infinite;
+  border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.07);
+  box-shadow:0 0 18px var(--avoid-glow);animation:recPulse 2.5s ease infinite;
 }
 @keyframes recPulse{0%,100%{opacity:1}50%{opacity:.78}}
 .rec-icon{font-size:1.2rem;line-height:1}
@@ -249,8 +237,7 @@ body{animation:pgIn .65s ease both}
 .reason-card{
   display:flex;align-items:center;gap:10px;
   padding:11px 14px;border-radius:var(--r);
-  background:var(--card);border:1px solid var(--bdr);
-  transition:all .35s;
+  background:var(--card);border:1px solid var(--bdr);transition:all .35s;
 }
 .reason-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--sub);transition:background .4s,box-shadow .4s}
 .reason-txt{font-size:.8rem;color:var(--txt);line-height:1.4;transition:color .3s}
@@ -273,14 +260,12 @@ body{animation:pgIn .65s ease both}
 }
 .go-btn:hover{transform:translateY(-3px);box-shadow:0 8px 28px rgba(34,197,94,.5)}
 .go-btn:active{transform:scale(.95)}
-
 .avoid-btn{
   background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff;
   box-shadow:0 4px 18px rgba(239,68,68,.3);
 }
 .avoid-btn:hover{transform:translateY(-3px);box-shadow:0 8px 28px rgba(239,68,68,.5)}
 .avoid-btn:active{transform:scale(.95)}
-
 .vote-btn.voted{opacity:.6;pointer-events:none}
 
 /* Ripple */
@@ -359,7 +344,6 @@ body{animation:pgIn .65s ease both}
 .msg-body{max-width:72%}
 .msg-meta{display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap}
 .msg-name{font-size:.73rem;font-weight:600;color:var(--txt)}
-/* vote chip inside message */
 .vote-chip{
   font-size:.58rem;font-weight:700;padding:1px 7px;border-radius:99px;letter-spacing:.03em;
 }
@@ -376,9 +360,58 @@ body{animation:pgIn .65s ease both}
 }
 .msg.own .bubble{border-radius:11px 11px 2px 11px;background:var(--glow);border-color:var(--c)}
 .bubble:hover{transform:translateY(-2px);box-shadow:0 5px 18px rgba(0,0,0,.2),0 0 8px var(--glow)}
-/* coloured left border based on vote */
 .bubble.go-bubble{border-left:2px solid var(--cg)}
 .bubble.avoid-bubble{border-left:2px solid var(--cr)}
+
+/* ── Message Actions ──────────────────────────── */
+.msg-actions{
+  display:flex;align-items:center;gap:8px;margin-top:5px;
+}
+
+/* ── Upvote Button ────────────────────────────── */
+.upvote-btn{
+  display:flex;align-items:center;gap:4px;
+  padding:3px 10px;border-radius:99px;
+  border:1px solid var(--bdr);background:rgba(255,255,255,.04);
+  color:var(--sub);font-size:.7rem;font-weight:600;cursor:pointer;
+  transition:color var(--e),background var(--e),border-color var(--e);
+}
+.upvote-btn:hover{color:var(--c);border-color:var(--c);background:var(--glow)}
+.upvote-btn.voted{color:var(--c);border-color:var(--c);background:var(--glow)}
+
+/* ── Like Button ──────────────────────────────── */
+.like-btn{
+  display:flex;align-items:center;gap:5px;
+  padding:3px 10px;border-radius:99px;
+  border:1px solid var(--bdr);background:rgba(255,255,255,.04);
+  color:var(--sub);font-family:'Plus Jakarta Sans',sans-serif;
+  font-size:.7rem;font-weight:600;cursor:pointer;
+  transition:color var(--e),background var(--e),border-color var(--e),transform .2s;
+}
+.like-btn:hover:not(:disabled){
+  color:#f43f5e;border-color:rgba(244,63,94,.45);
+  background:rgba(244,63,94,.08);transform:translateY(-1px);
+}
+.like-btn.liked{
+  color:#f43f5e;border-color:rgba(244,63,94,.45);
+  background:rgba(244,63,94,.1);cursor:default;
+}
+.like-btn.own-msg{opacity:.38;cursor:not-allowed}
+.like-btn:disabled{pointer-events:none}
+
+.like-ico{
+  width:13px;height:13px;flex-shrink:0;
+  transition:fill .25s,stroke .25s;
+}
+.like-btn.liked .like-ico{fill:#f43f5e;stroke:#f43f5e}
+
+.like-count{
+  font-variant-numeric:tabular-nums;min-width:10px;text-align:center;
+}
+
+.liked-label{
+  font-size:.62rem;color:#f43f5e;font-weight:600;letter-spacing:.03em;
+}
 
 /* ── DOCK ─────────────────────────────────────── */
 .dock{

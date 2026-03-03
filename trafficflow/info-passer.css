@@ -65,11 +65,9 @@ body{animation:pgIn .6s ease both}
 }
 .rank-card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity var(--e)}
 .rank-card:hover{transform:translateY(-2px);box-shadow:0 8px 26px rgba(0,0,0,.4),0 0 12px var(--glow)}
-/* urgency border colours */
 .rank-card.urg-red  {border-left-color:var(--cr)}
 .rank-card.urg-amber{border-left-color:var(--ca)}
 .rank-card.urg-yel  {border-left-color:var(--cy)}
-/* top card shimmer */
 .rank-card.rank-1{animation:topPulse 2.5s ease infinite}
 @keyframes topPulse{0%,100%{box-shadow:0 4px 18px rgba(0,0,0,.35)}50%{box-shadow:0 4px 24px rgba(0,0,0,.4),0 0 16px rgba(255,61,90,.18)}}
 
@@ -79,7 +77,6 @@ body{animation:pgIn .6s ease both}
 .rc-info{flex:1;min-width:0}
 .rc-type{display:block;font-family:'Space Grotesk',sans-serif;font-size:.88rem;font-weight:700;color:var(--txt)}
 .rc-loc{display:block;font-size:.66rem;color:var(--sub);line-height:1.4;margin-top:1px;word-break:break-word}
-/* repetition badge */
 .rc-badge{
   font-family:'Space Grotesk',sans-serif;font-size:.62rem;font-weight:800;
   min-width:22px;height:22px;border-radius:99px;
@@ -91,7 +88,6 @@ body{animation:pgIn .6s ease both}
 .badge-amber{background:rgba(255,170,0,.2);color:var(--ca);border:1px solid rgba(255,170,0,.35)}
 .badge-yel  {background:rgba(245,224,48,.15);color:var(--cy);border:1px solid rgba(245,224,48,.3)}
 
-/* confidence meter */
 .conf-row{display:flex;align-items:center;gap:7px;margin-top:8px}
 .conf-bar{flex:1;height:4px;background:rgba(255,255,255,.07);border-radius:99px;overflow:hidden}
 .conf-fill{height:100%;border-radius:99px;transition:width .8s cubic-bezier(.4,0,.2,1)}
@@ -100,7 +96,6 @@ body{animation:pgIn .6s ease both}
 .conf-fill.yel  {background:linear-gradient(90deg,var(--cy),#ffe066)}
 .conf-pct{font-size:.6rem;font-weight:700;color:var(--sub);flex-shrink:0}
 
-/* pulse dot */
 .rc-pulse{width:7px;height:7px;border-radius:50%;flex-shrink:0;animation:rcp 1.5s ease infinite}
 @keyframes rcp{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.5)}}
 
@@ -113,7 +108,6 @@ body{animation:pgIn .6s ease both}
 .feed::-webkit-scrollbar{width:4px}
 .feed::-webkit-scrollbar-thumb{background:rgba(79,142,247,.15);border-radius:99px}
 
-/* Scroll btn */
 .scroll-btn{position:absolute;bottom:128px;right:20px;z-index:50;display:none;align-items:center;gap:6px;background:var(--c);color:#fff;border:none;border-radius:99px;padding:6px 13px;font-size:.73rem;font-weight:700;cursor:pointer;box-shadow:0 4px 18px rgba(79,142,247,.4);animation:sbounce 1.6s ease infinite alternate}
 .scroll-btn.show{display:flex}
 @keyframes sbounce{from{transform:translateY(0)}to{transform:translateY(-4px)}}
@@ -123,19 +117,16 @@ body{animation:pgIn .6s ease both}
 @keyframes msgIn{to{opacity:1;transform:translateY(0) scale(1)}}
 .msg.own{flex-direction:row-reverse}
 
-/* avatar */
 .av{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;font-size:.74rem;font-weight:700;cursor:pointer;position:relative;z-index:20}
 .av.g{background:rgba(79,142,247,.16);border:1.5px solid rgba(79,142,247,.38);color:var(--c)}
 .av.b{background:rgba(162,89,255,.16);border:1.5px solid rgba(162,89,255,.38);color:var(--c2)}
 .av.r{background:rgba(255,61,90,.16);border:1.5px solid rgba(255,61,90,.38);color:var(--cr)}
 
-/* tooltip */
 #av-tip{position:fixed;z-index:9999;pointer-events:none;background:var(--card);border:1px solid var(--bdr);border-radius:9px;padding:7px 12px;font-size:.69rem;color:var(--txt);white-space:nowrap;backdrop-filter:blur(16px);box-shadow:0 6px 24px rgba(0,0,0,.55);opacity:0;transition:opacity .15s;transform:translateX(-50%);font-family:'Plus Jakarta Sans',sans-serif;line-height:1.5}
 
 .msg-body{max-width:68%}
 .msg-meta{display:flex;align-items:center;gap:6px;margin-bottom:3px}
 .msg-name{font-size:.73rem;font-weight:600;color:var(--txt)}
-/* urgency label on message */
 .msg-urg{font-size:.58rem;font-weight:700;padding:1px 6px;border-radius:99px}
 .msg-urg.red  {background:rgba(255,61,90,.18);color:var(--cr);border:1px solid rgba(255,61,90,.3)}
 .msg-urg.amber{background:rgba(255,170,0,.18);color:var(--ca);border:1px solid rgba(255,170,0,.3)}
@@ -146,13 +137,62 @@ body{animation:pgIn .6s ease both}
 .msg.own .bubble{border-radius:11px 11px 2px 11px;background:rgba(79,142,247,.09);border-color:rgba(79,142,247,.28)}
 .bubble:hover{transform:translateY(-2px);box-shadow:0 5px 18px rgba(0,0,0,.25),0 0 8px var(--glow)}
 
+/* ── Message Actions ──────────────────────────── */
+.msg-actions{
+  display:flex;align-items:center;gap:8px;margin-top:5px;
+}
+
+/* ── Upvote Button ────────────────────────────── */
+.upvote-btn{
+  display:flex;align-items:center;gap:4px;
+  padding:3px 10px;border-radius:99px;
+  border:1px solid var(--bdr);background:rgba(255,255,255,.04);
+  color:var(--sub);font-size:.7rem;font-weight:600;cursor:pointer;
+  transition:color var(--e),background var(--e),border-color var(--e);
+}
+.upvote-btn:hover{color:var(--c);border-color:var(--c);background:var(--glow)}
+.upvote-btn.voted{color:var(--c);border-color:var(--c);background:var(--glow)}
+
+/* ── Like Button ──────────────────────────────── */
+.like-btn{
+  display:flex;align-items:center;gap:5px;
+  padding:3px 10px;border-radius:99px;
+  border:1px solid var(--bdr);background:rgba(255,255,255,.04);
+  color:var(--sub);font-family:'Plus Jakarta Sans',sans-serif;
+  font-size:.7rem;font-weight:600;cursor:pointer;
+  transition:color var(--e),background var(--e),border-color var(--e),transform .2s;
+}
+.like-btn:hover:not(:disabled){
+  color:#f43f5e;border-color:rgba(244,63,94,.45);
+  background:rgba(244,63,94,.08);transform:translateY(-1px);
+}
+.like-btn.liked{
+  color:#f43f5e;border-color:rgba(244,63,94,.45);
+  background:rgba(244,63,94,.1);cursor:default;
+}
+.like-btn.own-msg{opacity:.38;cursor:not-allowed}
+.like-btn:disabled{pointer-events:none}
+
+.like-ico{
+  width:13px;height:13px;flex-shrink:0;
+  transition:fill .25s,stroke .25s;
+}
+.like-btn.liked .like-ico{fill:#f43f5e;stroke:#f43f5e}
+
+.like-count{
+  font-variant-numeric:tabular-nums;min-width:10px;text-align:center;
+}
+
+.liked-label{
+  font-size:.62rem;color:#f43f5e;font-weight:600;letter-spacing:.03em;
+}
+
 /* DOCK */
 .dock{flex-shrink:0;border-top:1px solid var(--bdr);background:var(--panel);backdrop-filter:blur(24px) saturate(1.7);padding:10px 14px;display:flex;flex-direction:column;gap:8px}
 .triggers{display:flex;gap:6px;flex-wrap:wrap}
 .trig{padding:5px 12px;border-radius:99px;border:1px solid var(--bdr);background:rgba(255,255,255,.03);color:var(--sub);font-family:'Plus Jakarta Sans',sans-serif;font-size:.71rem;font-weight:500;cursor:pointer;position:relative;overflow:hidden;transition:color var(--e),background var(--e),border-color var(--e),transform .14s}
 .trig::before{content:'';position:absolute;inset:0;transform:translateX(-100%);transition:transform .36s}
 .trig:active{transform:scale(.92)}
-/* Colour-coded trigger buttons */
 .trig-red  {border-color:rgba(255,61,90,.3);color:rgba(255,61,90,.7)}
 .trig-amber{border-color:rgba(255,170,0,.3);color:rgba(255,170,0,.7)}
 .trig-yel  {border-color:rgba(245,224,48,.3);color:rgba(245,224,48,.7)}
