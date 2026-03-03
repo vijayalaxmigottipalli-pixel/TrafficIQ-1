@@ -65,12 +65,18 @@ const S = {
     if (fromUrl) { localStorage.setItem('tiq-city', fromUrl); return fromUrl; }
     return resolveCity(localStorage.getItem('tiq-city')) || 'Bhimavaram Railway Station';
   })(),
-  name:  localStorage.getItem('tiq-name') || 'You',
+  name:         localStorage.getItem('tiq-name') || 'You',
   activeCard:   null,
   _unsubCounts: null,
   _unsubFeed:   null,
-  counts: {},
+  counts:       {},
+  /* likedKeys = "currentUser__msgDocId" — one entry per liked message */
+  likedKeys: new Set(JSON.parse(localStorage.getItem('tiq-sc-liked-keys') || '[]')),
 };
+
+function persistLiked() {
+  localStorage.setItem('tiq-sc-liked-keys', JSON.stringify([...S.likedKeys]));
+}
 
 /* ══ THEME ══ */
 function setTheme(t) {
@@ -85,11 +91,7 @@ document.getElementById('themeBtn').addEventListener('click', () =>
 );
 document.getElementById('tbCity').textContent = S.city;
 
-/* ══ SHORTCUTS
-   RULE: trigger = the EXACT short text shown in input box AND used as keyword.
-   matchShortcut() does an exact string match on trigger text.
-   This guarantees zero mismatch — trigger button → correct shortcut always.
-══ */
+/* ══ SHORTCUTS DATA ══ */
 const CITY_SHORTCUTS = {
   'Bhimavaram Railway Station': [
     { id:'brs-1', ico:'🚉', name:'Station Back Gate Route', loc:'Back Gate → NH216 Junction',
@@ -167,29 +169,21 @@ function getShortcuts() {
   return CITY_SHORTCUTS[S.city] || CITY_SHORTCUTS['Bhimavaram Railway Station'];
 }
 
-/* ══ MATCH — exact trigger string match, zero ambiguity ══ */
 function matchShortcut(msgText) {
   const trimmed = msgText.trim();
   const shortcuts = getShortcuts();
-  // First try exact match against trigger
-  const exact = shortcuts.find(sc =>
-    sc.trigger.toLowerCase() === trimmed.toLowerCase()
-  );
+  const exact = shortcuts.find(sc => sc.trigger.toLowerCase() === trimmed.toLowerCase());
   if (exact) return exact;
-  // Fallback: contains match
   const contains = shortcuts.find(sc =>
     trimmed.toLowerCase().includes(sc.trigger.toLowerCase()) ||
     sc.trigger.toLowerCase().includes(trimmed.toLowerCase())
   );
   if (contains) return contains;
-  // Last resort: first shortcut
   return shortcuts[0];
 }
 
-/* ══ CONFIDENCE — exactly +10% per message ══ */
 function calcConf(count) {
   if (!count || count <= 0) return 0;
-  // Each message = exactly 10%. Cap at 90% (9 messages = 90%, stays there).
   return Math.min(90, count * 10);
 }
 function calcStatus(count) {
@@ -201,22 +195,20 @@ function calcStatus(count) {
   return `${count}+ reports · High confidence · Community verified`;
 }
 
-/* ══ RENDER TRIGGERS — short labels, exact trigger text as message ══ */
 function renderTriggers() {
   const trigRow = document.querySelector('.triggers');
   if (!trigRow) return;
   trigRow.innerHTML = '';
   getShortcuts().forEach(sc => {
     const btn = document.createElement('button');
-    btn.className = 'trig';
-    btn.dataset.msg = sc.trigger; // exact trigger text goes into input box
-    btn.textContent = sc.ico + ' ' + sc.trigger; // short label on button
+    btn.className   = 'trig';
+    btn.dataset.msg = sc.trigger;
+    btn.textContent = sc.ico + ' ' + sc.trigger;
     btn.addEventListener('click', () => trigFill(btn));
     trigRow.appendChild(btn);
   });
 }
 
-/* ══ RENDER LEFT PANEL ══ */
 function renderCards() {
   const inner     = document.querySelector('.panel-inner');
   const confBlock = document.getElementById('confBlock');
@@ -229,18 +221,18 @@ function renderCards() {
   if (active.length === 0) return;
 
   active.forEach((sc, idx) => {
-    const count   = S.counts[sc.id] || 0;
-    const conf    = calcConf(count);
-    const isTop   = idx === 0;
-    const dotClr  = conf >= 50 ? 'var(--cg)' : 'var(--ca)';
-    const barClr  = conf >= 50 ? 'var(--cg)' : 'var(--ca)';
-    const confTxt = conf >= 50 ? 'cg' : 'ca';
+    const count    = S.counts[sc.id] || 0;
+    const conf     = calcConf(count);
+    const isTop    = idx === 0;
+    const dotClr   = conf >= 50 ? 'var(--cg)' : 'var(--ca)';
+    const barClr   = conf >= 50 ? 'var(--cg)' : 'var(--ca)';
+    const confTxt  = conf >= 50 ? 'cg' : 'ca';
     const tagsHtml = sc.tags.map(t => `<span class="tag ${t.cls}">${t.label}</span>`).join('');
 
     const card = document.createElement('div');
-    card.className = `sc-card${isTop ? ' rank-1' : ''}`;
+    card.className  = `sc-card${isTop ? ' rank-1' : ''}`;
     card.dataset.id = sc.id;
-    card.innerHTML = `
+    card.innerHTML  = `
       <div class="sc-active-ring"></div>
       <div class="sc-top">
         <span class="sc-ico">${sc.ico}</span>
@@ -251,7 +243,7 @@ function renderCards() {
         <span class="sc-dot" style="background:${dotClr};box-shadow:0 0 8px ${dotClr}"></span>
       </div>
       <p class="sc-desc">${sc.desc}</p>
-      <div class="sc-tags">${tagsHtml}<span class="tag bolt">×${count} report${count>1?'s':''}</span></div>
+      <div class="sc-tags">${tagsHtml}<span class="tag bolt">x${count} report${count>1?'s':''}</span></div>
       <div class="sev-row">
         <div class="sev-bar"><div class="sev-fill" style="width:${conf}%;background:${barClr}"></div></div>
         <span class="sev-txt ${confTxt}">${conf}%</span>
@@ -272,7 +264,6 @@ function renderCards() {
     if (S.activeCard === sc.id) card.classList.add('active');
   });
 
-  // Auto-highlight top card on first appearance
   if (!S.activeCard && active.length > 0) {
     const topCard = inner.querySelector('.sc-card');
     if (topCard) {
@@ -284,7 +275,6 @@ function renderCards() {
   }
 }
 
-/* ══ CONFIDENCE RING ══ */
 function updateConfidenceRing(count) {
   const conf     = calcConf(count);
   const ring     = document.getElementById('ringFill');
@@ -310,10 +300,12 @@ function updateConfidenceRing(count) {
 }
 
 /* ══ FEED ══ */
-const feed      = document.getElementById('feed');
-const scrollBtn = document.getElementById('scrollBtn');
+const feed       = document.getElementById('feed');
+const scrollBtn  = document.getElementById('scrollBtn');
 let userScrolled = false;
-const renderedIds = new Set();
+const renderedIds   = new Set();
+/* likeListeners: authorName → { unsub, btns[] } */
+const likeListeners = {};
 
 feed.addEventListener('scroll', () => {
   userScrolled = feed.scrollHeight - feed.scrollTop - feed.clientHeight > 40;
@@ -329,17 +321,104 @@ function timeStr(ts) {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
+/* ══ LIKE A MESSAGE ══
+   message_likes/{authorName}  ← doc ID = authorName (same as enter-traffic)
+     authorName: "Driver_484"
+     likeCount:  N             ← total likes across ALL pages combined
+     lastUpdated: timestamp
+     likers/{liker}__{msgId}   ← sub-doc prevents double-liking same message
+══ */
+function likeMessage(msgId, authorName, btnEl) {
+  if (!window.db) return;
+
+  const likeKey = S.name + '__' + msgId;
+  if (S.likedKeys.has(likeKey)) return;
+
+  if (authorName === S.name) {
+    gsap.fromTo(btnEl,{x:-4},{x:0,duration:.3,ease:'elastic.out(1,.4)',clearProps:'x'});
+    return;
+  }
+
+  const safeKey = (S.name + '__' + msgId).replace(/[^a-zA-Z0-9_\-]/g, '_');
+
+  /* Optimistic UI */
+  S.likedKeys.add(likeKey);
+  persistLiked();
+  btnEl.classList.add('liked');
+  btnEl.disabled = true;
+  const countEl = btnEl.querySelector('.like-count');
+  if (countEl) countEl.textContent = parseInt(countEl.textContent || '0') + 1;
+  gsap.fromTo(btnEl,{scale:1.4},{scale:1,duration:.4,ease:'back.out(2)'});
+
+  /* Write using same modular SDK version as shortcuts.html imports */
+  import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js').then(fs => {
+    const authorDocRef = fs.doc(window.db, 'message_likes', authorName);
+    const likerDocRef  = fs.doc(window.db, 'message_likes', authorName, 'likers', safeKey);
+
+    fs.setDoc(likerDocRef, {
+      likedAt: fs.serverTimestamp(),
+      liker:   S.name,
+      msgId:   msgId,
+      page:    'shortcuts',
+    })
+    .then(() => fs.setDoc(authorDocRef, {
+      authorName:  authorName,
+      likeCount:   fs.increment(1),
+      lastUpdated: fs.serverTimestamp(),
+    }, { merge: true }))
+    .then(() => {
+      console.log('[TrafficIQ] Like saved (shortcuts). author:', authorName);
+    })
+    .catch(err => {
+      console.error('[TrafficIQ] Like failed:', err);
+      S.likedKeys.delete(likeKey);
+      persistLiked();
+      btnEl.classList.remove('liked');
+      btnEl.disabled = false;
+      if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent||'1') - 1);
+    });
+  });
+}
+
+/* ══ SUBSCRIBE TO LIVE LIKE COUNT ══ */
+function subscribeLikes(authorName, btnEl) {
+  import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js').then(fs => {
+    if (!likeListeners[authorName]) {
+      likeListeners[authorName] = {
+        unsub: fs.onSnapshot(
+          fs.doc(window.db, 'message_likes', authorName),
+          snap => {
+            const total = snap.exists() ? (snap.data().likeCount || 0) : 0;
+            likeListeners[authorName]?.btns.forEach(b => {
+              const c = b.querySelector('.like-count');
+              if (c) c.textContent = total;
+            });
+          }
+        ),
+        btns: [],
+      };
+    }
+    likeListeners[authorName].btns.push(btnEl);
+  });
+}
+
+/* ══ ADD MESSAGE TO FEED ══ */
 function addMsg({ id, name, role, badge, badgeLbl, init, msg, votes=0, own=false, ts=null, shortcutId=null }) {
   document.getElementById('emptyState')?.remove();
   if (id && renderedIds.has(id)) return;
   if (id) renderedIds.add(id);
 
-  const sc = shortcutId ? getShortcuts().find(s => s.id === shortcutId) : null;
-  const routeLabel = sc ? `<span class="msg-route-tag">${sc.ico} ${sc.trigger}</span>` : '';
+  const sc           = shortcutId ? getShortcuts().find(s => s.id === shortcutId) : null;
+  const routeLabel   = sc ? `<span class="msg-route-tag">${sc.ico} ${sc.trigger}</span>` : '';
+  const isTemp       = !id || id.startsWith('temp-');
+  const likeKey      = S.name + '__' + id;
+  const alreadyLiked = !isTemp && S.likedKeys.has(likeKey);
+  const isOwnMsg     = name === S.name;
 
   const el = document.createElement('div');
   el.className = `msg${own?' own':''}`;
   if (id) el.dataset.docId = id;
+
   el.innerHTML = `
     <div class="av ${role}" data-tip="${name} · ${badgeLbl}">${init}</div>
     <div class="msg-body">
@@ -352,13 +431,38 @@ function addMsg({ id, name, role, badge, badgeLbl, init, msg, votes=0, own=false
       <div class="bubble">${msg}</div>
       <div class="msg-actions">
         <button class="upvote-btn" data-base="${votes}">▲ <span class="vc">${votes}</span></button>
+        ${!isTemp ? `
+        <button
+          class="like-btn${alreadyLiked ? ' liked' : ''}${isOwnMsg ? ' own-msg' : ''}"
+          title="${isOwnMsg ? "Can't like your own message" : alreadyLiked ? 'Already liked' : 'Like this report'}"
+          ${alreadyLiked || isOwnMsg ? 'disabled' : ''}
+        >
+          <svg class="like-ico" viewBox="0 0 24 24" fill="${alreadyLiked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
+            <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+          </svg>
+          <span class="like-count">0</span>
+        </button>
+        ${alreadyLiked ? '<span class="liked-label">Liked ✓</span>' : ''}` : ''}
       </div>
     </div>`;
+
+  /* Upvote handler (unchanged) */
   el.querySelector('.upvote-btn')?.addEventListener('click', function() {
     const voted = this.classList.toggle('voted');
     this.querySelector('.vc').textContent = parseInt(this.dataset.base) + (voted?1:0);
     gsap.fromTo(this,{scale:.88},{scale:1,duration:.3,ease:'back.out(2)'});
   });
+
+  /* Like handler */
+  if (!isTemp) {
+    const btn = el.querySelector('.like-btn');
+    if (btn && !isOwnMsg && !alreadyLiked) {
+      btn.addEventListener('click', () => likeMessage(id, name, btn));
+    }
+    if (btn) subscribeLikes(name, btn);
+  }
+
   feed.appendChild(el);
   if (!userScrolled) scrollToBottom();
   else scrollBtn.classList.add('show');
@@ -375,16 +479,16 @@ function startFeedListener() {
       const d = change.doc.data();
       if (d.city !== S.city) return;
       addMsg({
-        id: change.doc.id,
-        name:       d.name     || 'User',
-        role:       d.role     || 'b',
-        badge:      d.badge    || 'local',
-        badgeLbl:   d.badgeLbl || '⌂ Local Guide',
-        init:       d.init     || (d.name||'U').substring(0,2).toUpperCase(),
-        msg:        d.msg      || '',
-        votes:      d.votes    || 0,
+        id:         change.doc.id,
+        name:       d.name       || 'User',
+        role:       d.role       || 'b',
+        badge:      d.badge      || 'local',
+        badgeLbl:   d.badgeLbl   || '⌂ Local Guide',
+        init:       d.init       || (d.name||'U').substring(0,2).toUpperCase(),
+        msg:        d.msg        || '',
+        votes:      d.votes      || 0,
         own:        d.name === S.name,
-        ts:         d.createdAt || null,
+        ts:         d.createdAt  || null,
         shortcutId: d.shortcutId || null,
       });
     });

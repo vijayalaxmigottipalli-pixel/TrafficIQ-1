@@ -109,10 +109,7 @@
 })();
 
 
-/* ══ VALID CITIES
-   These EXACT strings are used as the Firestore `city` field value.
-   They must match what dashboard.js saves to localStorage 'tiq-city'.
-══ */
+/* ══ VALID CITIES ══ */
 const VALID_CITIES = [
   'Bhimavaram Railway Station',
   'Government Hospital',
@@ -121,20 +118,13 @@ const VALID_CITIES = [
   'Vishnu College',
 ];
 
-/* ── resolveCity: handles URL encoding, extra spaces, case differences ──
-   URLSearchParams.get() already decodes %20 → space, but we still
-   trim() and do a lowercase fallback to be safe.
-── */
 function resolveCity(raw) {
   if (!raw) return null;
   const cleaned = String(raw).trim();
-  // 1. Exact match
   if (VALID_CITIES.includes(cleaned)) return cleaned;
-  // 2. Case-insensitive match (handles "sagi ramakrishnam..." etc.)
   const lower = cleaned.toLowerCase();
   const found = VALID_CITIES.find(c => c.toLowerCase() === lower);
   if (found) return found;
-  // 3. Partial match for very long names that got truncated in storage
   const partial = VALID_CITIES.find(c =>
     c.toLowerCase().startsWith(lower.substring(0, 12)) ||
     lower.startsWith(c.toLowerCase().substring(0, 12))
@@ -142,38 +132,37 @@ function resolveCity(raw) {
   return partial || null;
 }
 
-/* ══ STATE ══
-   City resolution priority:
-   1. URL param  ?city=Sagi%20Ramakrishnam%20Raju%20Engineering%20College
-   2. localStorage key 'tiq-city'  (set by dashboard.js setCityEverywhere)
-   3. Hard fallback: 'Bhimavaram Railway Station'
-
-   DEBUG: open console and check:
-     console.log('city from URL:', new URLSearchParams(location.search).get('city'))
-     console.log('city from LS:',  localStorage.getItem('tiq-city'))
-══ */
+/* ══ STATE ══ */
 const S = {
   theme: localStorage.getItem('tiq-theme') || 'dark',
   city: (function () {
-    // 1. Try URL param first — most reliable when coming from dashboard nav links
     const urlParam = new URLSearchParams(location.search).get('city');
     const fromUrl  = resolveCity(urlParam);
     if (fromUrl) {
-      // Keep localStorage in sync so other pages also get the city
       localStorage.setItem('tiq-city', fromUrl);
       return fromUrl;
     }
-    // 2. Try localStorage
     const stored  = localStorage.getItem('tiq-city');
     const fromLS  = resolveCity(stored);
     if (fromLS) return fromLS;
-    // 3. Hard fallback
     console.warn('[TrafficIQ] Could not resolve city from URL or localStorage. Using default.');
     return 'Bhimavaram Railway Station';
   })(),
-  name:  localStorage.getItem('tiq-name') || 'You',
+  name: localStorage.getItem('tiq-name') || 'You',
+  get email() { return (firebase.auth().currentUser || {}).email || ''; },
   _unsubMessages: null,
+
+  /*
+    likedKeys stores "authorName__msgId" strings so we know:
+    - which specific message the user liked (to show liked state on the button)
+    - but we only increment likeCount once per authorName per msgId
+  */
+  likedKeys: new Set(JSON.parse(localStorage.getItem('tiq-liked-keys') || '[]')),
 };
+
+function persistLiked() {
+  localStorage.setItem('tiq-liked-keys', JSON.stringify([...S.likedKeys]));
+}
 
 /* ══ THEME ══ */
 function setTheme(t) {
@@ -213,16 +202,125 @@ function timeStr(timestamp) {
   return `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
 }
 
-const renderedIds = new Set();
+const renderedIds  = new Set();
+const likeListeners = {};
 
+/* ══ LIKE A MESSAGE ══
+   Structure in message_likes:
+   ─────────────────────────────
+   message_likes/{authorName}          ← ONE doc per user, doc ID = authorName
+     authorName: "Driver_484"
+     likeCount:  7                     ← total likes from ALL pages combined
+     lastUpdated: timestamp
+     likers/                           ← sub-collection to prevent double-liking
+       "{liker}__{msgId}": { likedAt, liker, msgId, page }
+   ─────────────────────────────
+   Key insight: likeCount on the user doc increments for every like
+   received on any message from any page. The likers sub-collection
+   uses "{liker}__{msgId}" as doc ID so each person can only like
+   each specific message once, but CAN like multiple messages from
+   the same author (each adds +1 to that author's total likeCount).
+══ */
+function likeMessage(msgId, authorName, btnEl) {
+  if (!window._db) return;
+
+  // Unique key = who liked + which message
+  const likeKey = S.name + '__' + msgId;
+  if (S.likedKeys.has(likeKey)) return; // already liked this specific message
+
+  // Can't like your own messages
+  if (authorName === S.name) {
+    gsap.fromTo(btnEl, { x: -4 }, { x: 0, duration: .3, ease: 'elastic.out(1,.4)', clearProps: 'x' });
+    return;
+  }
+
+  // Safe doc ID for the liker sub-collection: "{liker}__{msgId}"
+  const safeKey  = (S.name + '__' + msgId).replace(/[^a-zA-Z0-9_\-]/g, '_');
+
+  // Ref to the author's doc in message_likes (doc ID = authorName)
+  const authorDocRef = window._db.collection('message_likes').doc(authorName);
+
+  // Ref to the specific liker record (prevents double-liking this message)
+  const likerRef = authorDocRef.collection('likers').doc(safeKey);
+
+  // ── Optimistic UI update ──
+  S.likedKeys.add(likeKey);
+  persistLiked();
+  btnEl.classList.add('liked');
+  btnEl.disabled = true;
+  const countEl = btnEl.querySelector('.like-count');
+  if (countEl) countEl.textContent = parseInt(countEl.textContent || '0') + 1;
+  gsap.fromTo(btnEl, { scale: 1.4 }, { scale: 1, duration: .4, ease: 'back.out(2)' });
+
+  // ── Write to Firestore ──
+  likerRef.set({
+    likedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    liker:   S.name,
+    msgId:   msgId,
+    page:    'enter-traffic',
+  })
+  .then(() => {
+    // Increment the author's total likeCount (one doc per user)
+    return authorDocRef.set({
+      authorName:  authorName,
+      likeCount:   firebase.firestore.FieldValue.increment(1),
+      lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  })
+  .then(() => {
+    console.log('[TrafficIQ] ✅ Like saved. authorName:', authorName);
+  })
+  .catch(err => {
+    console.error('[TrafficIQ] Like failed:', err);
+    // Rollback optimistic update
+    S.likedKeys.delete(likeKey);
+    persistLiked();
+    btnEl.classList.remove('liked');
+    btnEl.disabled = false;
+    if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent || '1') - 1);
+  });
+}
+
+/* ══ SUBSCRIBE TO LIVE LIKE COUNT for a message author ══
+   Since we store likes per user (not per message), we listen to
+   the author's doc. Multiple messages from same author share one listener.
+══ */
+function subscribeLikes(authorName, btnEl) {
+  // Use authorName as listener key — one snapshot per author
+  if (!likeListeners[authorName]) {
+    likeListeners[authorName] = {
+      unsub: window._db.collection('message_likes').doc(authorName)
+        .onSnapshot(snap => {
+          const total = snap.exists ? (snap.data().likeCount || 0) : 0;
+          // Update all like buttons for this author
+          if (likeListeners[authorName]) {
+            likeListeners[authorName].btns.forEach(b => {
+              const c = b.querySelector('.like-count');
+              if (c) c.textContent = total;
+            });
+          }
+        }),
+      btns: [],
+    };
+  }
+  likeListeners[authorName].btns.push(btnEl);
+}
+
+/* ══ ADD MESSAGE TO FEED ══ */
 function addMsg({ id, name, role, score, init, msg, timestamp, own = false }) {
   if (id && renderedIds.has(id)) return;
   if (id) renderedIds.add(id);
 
   const el = document.createElement('div');
   el.className = `msg${own ? ' own' : ''}`;
-  const roleLabel = { g: '✓ Verified', b: 'Active User', r: '⚠ Flagged' };
-  const initials  = init || (name || 'UN').substring(0, 2).toUpperCase();
+
+  const roleLabel    = { g: '✓ Verified', b: 'Active User', r: '⚠ Flagged' };
+  const initials     = init || (name || 'UN').substring(0, 2).toUpperCase();
+  const isTemp       = !id || id.startsWith('temp-');
+  const likeKey      = S.name + '__' + id;
+  const alreadyLiked = id && S.likedKeys.has(likeKey);
+  const isOwnMsg     = name === S.name;
+
   el.innerHTML = `
     <div class="av ${role || 'b'}" data-tip="${name} · ${score}/100 · ${roleLabel[role] || 'Active User'}">${initials}</div>
     <div class="msg-body">
@@ -232,13 +330,38 @@ function addMsg({ id, name, role, score, init, msg, timestamp, own = false }) {
         <span class="msg-time">${timeStr(timestamp)}</span>
       </div>
       <div class="bubble">${msg}</div>
+      ${!isTemp ? `
+      <div class="like-row">
+        <button
+          class="like-btn${alreadyLiked ? ' liked' : ''}${isOwnMsg ? ' own-msg' : ''}"
+          title="${isOwnMsg ? "Can't like your own message" : alreadyLiked ? 'Already liked' : 'Like this report'}"
+          ${alreadyLiked || isOwnMsg ? 'disabled' : ''}
+        >
+          <svg class="like-ico" viewBox="0 0 24 24" fill="${alreadyLiked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
+            <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+          </svg>
+          <span class="like-count">0</span>
+        </button>
+        ${alreadyLiked ? '<span class="liked-label">Liked ✓</span>' : ''}
+      </div>` : ''}
     </div>`;
+
   feed.appendChild(el);
+
+  if (!isTemp) {
+    const btn = el.querySelector('.like-btn');
+    if (btn && !isOwnMsg && !alreadyLiked) {
+      btn.addEventListener('click', () => likeMessage(id, name, btn));
+    }
+    if (btn) subscribeLikes(name, btn);
+  }
+
   if (!userScrolled) scrollToBottom();
   else scrollBtn.classList.add('show');
 }
 
-/* ══ OPTIMISTIC MESSAGE — shows instantly before Firestore confirms ══ */
+/* ══ OPTIMISTIC MESSAGE ══ */
 function addMsgOptimistic(name, msg) {
   const tempId = 'temp-' + Date.now();
   renderedIds.add(tempId);
@@ -254,7 +377,7 @@ function addMsgOptimistic(name, msg) {
   });
 }
 
-/* ══ TRIGGER — fills input box ══ */
+/* ══ TRIGGER ══ */
 function trigFill(btn) {
   const inp = document.getElementById('chatInp');
   inp.value = btn.dataset.msg;
@@ -262,7 +385,7 @@ function trigFill(btn) {
   gsap.fromTo(btn, { scale: .9 }, { scale: 1, duration: .3, ease: 'back.out(2)' });
 }
 
-/* ══ SEND — saves city field with every message ══ */
+/* ══ SEND ══ */
 function sendMsg() {
   const inp = document.getElementById('chatInp');
   const txt = inp.value.trim();
@@ -271,10 +394,8 @@ function sendMsg() {
   inp.value = '';
   gsap.fromTo('.send-btn', { scale: .88 }, { scale: 1, duration: .28, ease: 'back.out(2)' });
 
-  // Show instantly on screen
   addMsgOptimistic(S.name, txt);
 
-  // Save to Firestore WITH city field so it filters correctly
   if (window._db) {
     window._db.collection('enter_traffic_messages').add({
       name:      S.name,
@@ -285,8 +406,6 @@ function sendMsg() {
       timestamp: firebase.firestore.FieldValue.serverTimestamp(),
     }).catch(err => console.error('Send failed:', err));
 
-    // ── Update places collection totalReports counter ──
-    // This is why the places collection exists — it tracks report counts per location
     window._db.collection('places').doc(S.city)
       .update({
         totalReports:  firebase.firestore.FieldValue.increment(1),
@@ -294,7 +413,6 @@ function sendMsg() {
         currentStatus: 'Active',
       })
       .catch(() => {
-        // Document might not exist yet — create it
         window._db.collection('places').doc(S.city).set({
           name:          S.city,
           totalReports:  1,
@@ -305,6 +423,7 @@ function sendMsg() {
       });
   }
 }
+
 document.getElementById('chatInp').addEventListener('keydown', e => {
   if (e.key === 'Enter') sendMsg();
 });
@@ -324,8 +443,6 @@ window.addEventListener('DOMContentLoaded', () => {
   gsap.to('#panel',  { x: 0, opacity: 1, duration: .75, ease: 'power3.out', delay: .25 });
   const streamEl = document.querySelector('.stream');
   if (streamEl) gsap.from(streamEl, { opacity: 0, duration: .5, ease: 'power2.out', delay: .35 });
-  // .issue-card elements are created dynamically by Firebase
-  // they are animated inside renderIssuePanel() when Firebase creates them
 });
 
 /* ══ ISSUE KEYWORD DETECTOR ══ */
@@ -337,7 +454,6 @@ function detectIssueType(msg) {
   return null;
 }
 
-/* ══ ISSUE DEFS ══ */
 const ISSUE_DEFS = {
   accident:     { ico: '🚗', label: 'Accident',          color: 'var(--cr)', sev: 'SEVERE',   sevCls: 'cr' },
   construction: { ico: '🚧', label: 'Road Construction', color: 'var(--ca)', sev: 'MODERATE', sevCls: 'ca' },
@@ -351,19 +467,13 @@ function renderIssuePanel(issueCounts) {
 
   const totalIssues = Object.values(issueCounts).reduce((a, b) => a + b, 0);
 
-  // Empty state — shown when city has no issue-type messages yet
   if (totalIssues === 0) {
     const empty = document.createElement('div');
     empty.className = 'no-issues-msg';
     empty.style.cssText = [
-      'text-align:center',
-      'padding:24px 12px',
-      'font-size:.75rem',
-      'color:var(--sub)',
-      'line-height:1.7',
-      'border:1px dashed var(--bdr)',
-      'border-radius:var(--r)',
-      'background:var(--card)',
+      'text-align:center', 'padding:24px 12px', 'font-size:.75rem',
+      'color:var(--sub)', 'line-height:1.7', 'border:1px dashed var(--bdr)',
+      'border-radius:var(--r)', 'background:var(--card)',
     ].join(';');
     empty.innerHTML = `
       <div style="font-size:1.8rem;margin-bottom:8px">✅</div>
@@ -379,10 +489,8 @@ function renderIssuePanel(issueCounts) {
   Object.keys(ISSUE_DEFS).forEach(function (key) {
     const count = issueCounts[key] || 0;
     if (count === 0) return;
-
     const def = ISSUE_DEFS[key];
     const pct = Math.min(15 + count * 10, 98);
-
     const card = document.createElement('div');
     card.className    = 'issue-card';
     card.dataset.type = key;
@@ -412,109 +520,82 @@ function renderIssuePanel(issueCounts) {
 
 /* ══ ATTACH CITY LISTENERS ══ */
 function attachCityListeners(db, rdb, cityName) {
-
-  // ★ DEBUG: Log which city this room is loading (check browser console)
   console.log('[TrafficIQ] Loading traffic room for city:', JSON.stringify(cityName));
   document.getElementById('tbCity').textContent = cityName;
 
-  // Detach old listener if switching cities
-  if (S._unsubMessages) {
-    S._unsubMessages();
-    S._unsubMessages = null;
-  }
+  if (S._unsubMessages) { S._unsubMessages(); S._unsubMessages = null; }
 
-  // Reset feed for this city
+  // Unsubscribe all like listeners from previous city
+  Object.values(likeListeners).forEach(obj => obj.unsub && obj.unsub());
+  for (const k in likeListeners) delete likeListeners[k];
+
   feed.innerHTML = '';
   renderedIds.clear();
 
-  /* ── PRESENCE via Realtime Database ── */
+  /* ── PRESENCE ── */
   const presencePath = rdb.ref('presence/' + S.name.replace(/[.#$\[\]]/g, '_'));
   presencePath.set({ name: S.name, city: cityName, online: true });
   presencePath.onDisconnect().remove();
 
-  // Count only users in this city
   rdb.ref('presence').on('value', function (snap) {
     let count = 0;
-    snap.forEach(child => {
-      if (child.val().city === cityName) count++;
-    });
+    snap.forEach(child => { if (child.val().city === cityName) count++; });
     document.getElementById('tbOnline').textContent = count;
   });
 
-  /* ── MESSAGES — filtered by city ──
-     ⚠️  Firestore requires a composite index for where + orderBy.
-     If messages don't load, check the browser console for a Firebase
-     link → click it → "Create Index" in Firebase Console.
-     Fields: city (Ascending) + timestamp (Ascending)
-  ── */
+  /* ── MESSAGES ── */
   const query = db.collection('enter_traffic_messages')
     .where('city', '==', cityName)
     .orderBy('timestamp', 'asc');
 
   S._unsubMessages = query.onSnapshot(function (snapshot) {
-
-    const issueUsers = {
-      accident:     new Set(),
-      construction: new Set(),
-      breakdown:    new Set(),
-    };
+    const issueUsers   = { accident: new Set(), construction: new Set(), breakdown: new Set() };
     const uniqueSenders = new Set();
 
     snapshot.forEach(function (doc) {
-      const d    = doc.data();
-      // ★ DOUBLE GUARD: skip docs from other cities
+      const d = doc.data();
       if (d.city && d.city !== cityName) return;
       const name = (d.name || 'unknown').trim();
       uniqueSenders.add(name);
       const type = detectIssueType(d.msg || '');
-      if (type && issueUsers[type] !== undefined) {
-        issueUsers[type].add(name);
-      }
+      if (type && issueUsers[type] !== undefined) issueUsers[type].add(name);
     });
 
     document.getElementById('tbRep').textContent = uniqueSenders.size;
-
     renderIssuePanel({
       accident:     issueUsers.accident.size,
       construction: issueUsers.construction.size,
       breakdown:    issueUsers.breakdown.size,
     });
 
-    // Render newly added messages only
     snapshot.docChanges().forEach(function (change) {
-      if (change.type === 'added') {
-        const d  = change.doc.data();
-        const id = change.doc.id;
+      if (change.type !== 'added') return;
+      const d  = change.doc.data();
+      const id = change.doc.id;
 
-        // ★ DOUBLE GUARD: skip any doc that doesn't match this city
-        // This catches old docs without city field AND any index failures
-        if (d.city && d.city !== cityName) return;
+      if (d.city && d.city !== cityName) return;
 
-        // Remove matching optimistic message if present
-        const tempMsgs = feed.querySelectorAll('[data-msg-id^="temp-"]');
-        if (d.name === S.name) {
-          tempMsgs.forEach(el => {
-            const bubble = el.querySelector('.bubble');
-            if (bubble && bubble.textContent === d.msg) el.remove();
-          });
-        }
-
-        addMsg({
-          id:        id,
-          name:      d.name      || 'Unknown',
-          role:      d.role      || 'b',
-          score:     d.score     || 0,
-          init:      (d.name || 'UN').substring(0, 2).toUpperCase(),
-          msg:       d.msg       || '',
-          timestamp: d.timestamp || null,
-          own:       d.name === S.name,
+      if (d.name === S.name) {
+        feed.querySelectorAll('[data-msg-id^="temp-"]').forEach(el => {
+          const bubble = el.querySelector('.bubble');
+          if (bubble && bubble.textContent === d.msg) el.remove();
         });
       }
+
+      addMsg({
+        id:        id,
+        name:      d.name      || 'Unknown',
+        role:      d.role      || 'b',
+        score:     d.score     || 0,
+        init:      (d.name || 'UN').substring(0, 2).toUpperCase(),
+        msg:       d.msg       || '',
+        timestamp: d.timestamp || null,
+        own:       d.name === S.name,
+      });
     });
 
   }, function (err) {
     console.error('enter_traffic_messages error:', err);
-    // Show index creation hint
     if (err.code === 'failed-precondition') {
       const div = document.createElement('div');
       div.style.cssText = 'padding:12px 18px;font-size:.75rem;color:var(--ca);text-align:center;';
