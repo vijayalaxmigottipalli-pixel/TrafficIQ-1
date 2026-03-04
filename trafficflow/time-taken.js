@@ -51,10 +51,10 @@
       }
     `,
   });
-  scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), mat));
+  scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat));
   let t = 0;
-  (function tick(){ requestAnimationFrame(tick); t+=0.008; mat.uniforms.uTime.value=t; renderer.render(scene,camera); })();
-  addEventListener('resize', ()=>renderer.setSize(innerWidth, innerHeight));
+  (function tick() { requestAnimationFrame(tick); t += 0.008; mat.uniforms.uTime.value = t; renderer.render(scene, camera); })();
+  addEventListener('resize', () => renderer.setSize(innerWidth, innerHeight));
   window._bgMat = mat;
 })();
 
@@ -70,22 +70,22 @@ const VALID_CITIES = [
 
 /* ══ STATE ══ */
 const S = {
-  theme:        localStorage.getItem('tiq-theme') || 'dark',
-  city: (function() {
+  theme: localStorage.getItem('tiq-theme') || 'dark',
+  city: (function () {
     const urlParam = new URLSearchParams(location.search).get('city');
     if (urlParam && VALID_CITIES.includes(urlParam)) return urlParam;
     const stored = localStorage.getItem('tiq-city');
     if (stored && VALID_CITIES.includes(stored)) return stored;
     return VALID_CITIES[0];
   })(),
-  name:         localStorage.getItem('tiq-name') || 'You',
-  votes:        { long: 0, med: 0, short: 0 },
-  prevWinner:   null,
+  name: localStorage.getItem('tiq-name') || 'You',
+  votes: { long: 0, med: 0, short: 0 },
+  prevWinner: null,
   graphHistory: [],
-  userVoted:    false,
-  seenMsgIds:   new Set(),
-  _unsubMsgs:   null,
-  _unsubVotes:  null,
+  userVoted: false,
+  seenMsgIds: new Set(),
+  _unsubMsgs: null,
+  _unsubVotes: null,
 
   /* likedKeys = "currentUser__msgDocId" — one entry per liked message */
   likedKeys: new Set(JSON.parse(localStorage.getItem('tiq-tt-liked-keys') || '[]')),
@@ -142,32 +142,32 @@ function updatePoll() {
 
   animCount('tbTotal', total);
 
-  const pLong  = total ? Math.round(long  / total * 100) : 0;
-  const pMed   = total ? Math.round(med   / total * 100) : 0;
+  const pLong = total ? Math.round(long / total * 100) : 0;
+  const pMed = total ? Math.round(med / total * 100) : 0;
   const pShort = total ? 100 - pLong - pMed : 0;
 
-  document.getElementById('pb-long').style.width  = pLong  + '%';
-  document.getElementById('pb-med').style.width   = pMed   + '%';
+  document.getElementById('pb-long').style.width = pLong + '%';
+  document.getElementById('pb-med').style.width = pMed + '%';
   document.getElementById('pb-short').style.width = pShort + '%';
 
-  animCount('pp-long',  pLong,  '%');
-  animCount('pp-med',   pMed,   '%');
+  animCount('pp-long', pLong, '%');
+  animCount('pp-med', pMed, '%');
   animCount('pp-short', pShort, '%');
 
-  document.getElementById('pv-long').textContent  = long  + ' vote' + (long  !== 1 ? 's' : '');
-  document.getElementById('pv-med').textContent   = med   + ' vote' + (med   !== 1 ? 's' : '');
+  document.getElementById('pv-long').textContent = long + ' vote' + (long !== 1 ? 's' : '');
+  document.getElementById('pv-med').textContent = med + ' vote' + (med !== 1 ? 's' : '');
   document.getElementById('pv-short').textContent = short + ' vote' + (short !== 1 ? 's' : '');
 
   const winner = total === 0 ? null
     : long >= med && long >= short ? 'long'
-    : med  >= long && med >= short ? 'med'
-    : 'short';
+      : med >= long && med >= short ? 'med'
+        : 'short';
 
   const colorMap = { long: 'red-win', med: 'amber-win', short: 'green-win' };
 
   ['long', 'med', 'short'].forEach(k => {
     const card = document.getElementById(`pc-${k}`);
-    const wb   = document.getElementById(`wb-${k}`);
+    const wb = document.getElementById(`wb-${k}`);
     card.classList.remove('winner', 'red-win', 'amber-win', 'green-win');
     wb.style.opacity = '0';
     if (k === winner && total > 0) {
@@ -199,16 +199,16 @@ function updatePoll() {
 
 /* ══ TREND ARROW ══ */
 function updateTrend(winner) {
-  const wrap  = document.getElementById('trendArrowWrap');
-  const svg   = document.getElementById('trendSvg');
+  const wrap = document.getElementById('trendArrowWrap');
+  const svg = document.getElementById('trendSvg');
   const label = document.getElementById('trendLabel');
-  const sub   = document.getElementById('trendSub');
+  const sub = document.getElementById('trendSub');
 
   wrap.classList.remove('up', 'down', 'stable');
 
   if (!winner) {
     label.textContent = 'Calculating…';
-    sub.textContent   = 'Awaiting votes';
+    sub.textContent = 'Awaiting votes';
     svg.setAttribute('stroke', 'var(--sub)');
     return;
   }
@@ -218,21 +218,21 @@ function updateTrend(winner) {
     svg.setAttribute('stroke', 'var(--cr)');
     svg.innerHTML = '<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>';
     label.textContent = 'Delay increasing';
-    sub.textContent   = 'Majority: 1+ hour';
+    sub.textContent = 'Majority: 1+ hour';
     gsap.fromTo(svg, { y: 3 }, { y: 0, duration: .5, ease: 'back.out(2)', repeat: -1, yoyo: true });
   } else if (winner === 'short') {
     wrap.classList.add('down');
     svg.setAttribute('stroke', 'var(--cg)');
     svg.innerHTML = '<line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 12 12 19 19 12"/>';
     label.textContent = 'Delay clearing';
-    sub.textContent   = 'Majority: <10 min';
+    sub.textContent = 'Majority: <10 min';
     gsap.fromTo(svg, { y: -3 }, { y: 0, duration: .5, ease: 'back.out(2)', repeat: -1, yoyo: true });
   } else {
     wrap.classList.add('stable');
     svg.setAttribute('stroke', 'var(--ca)');
     svg.innerHTML = '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>';
     label.textContent = 'Delay stable';
-    sub.textContent   = 'Majority: ~30 min';
+    sub.textContent = 'Majority: ~30 min';
     gsap.killTweensOf(svg);
     gsap.set(svg, { y: 0 });
   }
@@ -243,16 +243,16 @@ function updateTrend(winner) {
 function redrawGraph() {
   const canvas = document.getElementById('graphCanvas');
   if (!canvas) return;
-  const dpr  = Math.min(devicePixelRatio, 2);
+  const dpr = Math.min(devicePixelRatio, 2);
   const rect = canvas.parentElement.getBoundingClientRect();
-  canvas.width  = (rect.width  || 200) * dpr;
+  canvas.width = (rect.width || 200) * dpr;
   canvas.height = 70 * dpr;
-  canvas.style.width  = (rect.width || 200) + 'px';
+  canvas.style.width = (rect.width || 200) + 'px';
   canvas.style.height = '70px';
 
-  const ctx  = canvas.getContext('2d');
-  const W    = canvas.width;
-  const H    = canvas.height;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
   const hist = S.graphHistory;
 
   ctx.clearRect(0, 0, W, H);
@@ -267,9 +267,9 @@ function redrawGraph() {
   }
 
   const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-  const lines  = [
-    { key: 'long',  color: isDark ? '#ef4444' : '#dc2626' },
-    { key: 'med',   color: isDark ? '#f59e0b' : '#d97706' },
+  const lines = [
+    { key: 'long', color: isDark ? '#ef4444' : '#dc2626' },
+    { key: 'med', color: isDark ? '#f59e0b' : '#d97706' },
     { key: 'short', color: isDark ? '#22c55e' : '#16a34a' },
   ];
 
@@ -293,11 +293,11 @@ function redrawGraph() {
     ctx.beginPath();
     pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
     ctx.strokeStyle = color;
-    ctx.lineWidth   = 1.5 * dpr;
+    ctx.lineWidth = 1.5 * dpr;
     ctx.shadowColor = color;
-    ctx.shadowBlur  = 4 * dpr;
+    ctx.shadowBlur = 4 * dpr;
     ctx.stroke();
-    ctx.shadowBlur  = 0;
+    ctx.shadowBlur = 0;
   });
 
   lines.forEach(({ key, color }) => {
@@ -307,9 +307,9 @@ function redrawGraph() {
     ctx.arc(W - 2, y, 3 * dpr, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.shadowColor = color;
-    ctx.shadowBlur  = 8 * dpr;
+    ctx.shadowBlur = 8 * dpr;
     ctx.fill();
-    ctx.shadowBlur  = 0;
+    ctx.shadowBlur = 0;
   });
 }
 
@@ -349,41 +349,41 @@ function likeMessage(msgId, authorName, btnEl) {
 
   import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(fs => {
     const msgLikeCountRef = fs.doc(window._db, 'messageLikeCounts', msgId);
-    const authorDocRef    = fs.doc(window._db, 'message_likes', authorName);
-    const likerDocRef     = fs.doc(window._db, 'message_likes', authorName, 'likers', safeKey);
+    const authorDocRef = fs.doc(window._db, 'message_likes', authorName);
+    const likerDocRef = fs.doc(window._db, 'message_likes', authorName, 'likers', safeKey);
 
     // Step 1: Record liker (idempotency guard)
     fs.setDoc(likerDocRef, {
       likedAt: fs.serverTimestamp(),
-      liker:   S.name,
-      msgId:   msgId,
-      page:    'time-taken',
+      liker: S.name,
+      msgId: msgId,
+      page: 'time-taken',
     })
-    .then(() => Promise.all([
-      // Step 2a: Per-message count → shown on like button
-      fs.setDoc(msgLikeCountRef, {
-        likeCount:   fs.increment(1),
-        lastUpdated: fs.serverTimestamp(),
-      }, { merge: true }),
+      .then(() => Promise.all([
+        // Step 2a: Per-message count → shown on like button
+        fs.setDoc(msgLikeCountRef, {
+          likeCount: fs.increment(1),
+          lastUpdated: fs.serverTimestamp(),
+        }, { merge: true }),
 
-      // Step 2b: Author leaderboard total → shown on leaderboard
-      fs.setDoc(authorDocRef, {
-        authorName:  authorName,
-        likeCount:   fs.increment(1),
-        lastUpdated: fs.serverTimestamp(),
-      }, { merge: true }),
-    ]))
-    .then(() => {
-      console.log('[TrafficIQ] ✅ Like saved (time-taken). msgId:', msgId, '| author:', authorName);
-    })
-    .catch(err => {
-      console.error('[TrafficIQ] Like failed:', err);
-      S.likedKeys.delete(likeKey);
-      persistLiked();
-      btnEl.classList.remove('liked');
-      btnEl.disabled = false;
-      if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent || '1') - 1);
-    });
+        // Step 2b: Author leaderboard total → shown on leaderboard
+        fs.setDoc(authorDocRef, {
+          authorName: authorName,
+          likeCount: fs.increment(1),
+          lastUpdated: fs.serverTimestamp(),
+        }, { merge: true }),
+      ]))
+      .then(() => {
+        console.log('[TrafficIQ] ✅ Like saved (time-taken). msgId:', msgId, '| author:', authorName);
+      })
+      .catch(err => {
+        console.error('[TrafficIQ] Like failed:', err);
+        S.likedKeys.delete(likeKey);
+        persistLiked();
+        btnEl.classList.remove('liked');
+        btnEl.disabled = false;
+        if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent || '1') - 1);
+      });
   });
 }
 
@@ -422,7 +422,7 @@ function subscribeLikes(msgId, btnEl) {
 
 
 /* ══ FEED HELPERS ══ */
-const feed      = document.getElementById('feed');
+const feed = document.getElementById('feed');
 const scrollBtn = document.getElementById('scrollBtn');
 let userScrolled = false;
 
@@ -440,7 +440,7 @@ function scrollToBottom() {
 
 function timeStr(ts) {
   const n = ts ? new Date(ts) : new Date();
-  return `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
+  return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
 }
 
 function addMsg({ id = null, name, role, init, vote = null, msg, own = false, ts = null }) {
@@ -451,13 +451,13 @@ function addMsg({ id = null, name, role, init, vote = null, msg, own = false, ts
   el.className = `msg${own ? ' own' : ''}`;
   if (id) el.dataset.msgId = id;
 
-  const chipLabel  = { long: '🔴 1+ hr', med: '🟡 30 min', short: '🟢 <10 min' };
-  const chip       = vote ? `<span class="vote-chip ${vote}">${chipLabel[vote]}</span>` : '';
-  const bubClass   = vote ? `bubble ${vote}-bub` : 'bubble';
-  const isTemp     = !id || id.startsWith('temp-');
-  const likeKey    = S.name + '__' + id;
+  const chipLabel = { long: '🔴 1+ hr', med: '🟡 30 min', short: '🟢 <10 min' };
+  const chip = vote ? `<span class="vote-chip ${vote}">${chipLabel[vote]}</span>` : '';
+  const bubClass = vote ? `bubble ${vote}-bub` : 'bubble';
+  const isTemp = !id || id.startsWith('temp-');
+  const likeKey = S.name + '__' + id;
   const alreadyLiked = !isTemp && S.likedKeys.has(likeKey);
-  const isOwnMsg   = name === S.name;
+  const isOwnMsg = name === S.name;
 
   el.innerHTML = `
     <div class="av ${role}" data-tip="${name}">${init}</div>
@@ -511,7 +511,7 @@ function initials(name) {
 
 /* ══ UPDATE UI WITH CITY NAME ══ */
 function updateCityUI(cityName) {
-  document.getElementById('tbCity').textContent     = cityName;
+  document.getElementById('tbCity').textContent = cityName;
   document.getElementById('feedHdrSub').textContent = cityName + ' · Real-time delay reports';
 }
 
@@ -521,14 +521,14 @@ function showMsgOptimistic(name, msg, vote) {
   const tempId = 'temp-' + Date.now();
   S.seenMsgIds.add(tempId);
   addMsg({
-    id:   tempId,
+    id: tempId,
     name: name,
     role: roleFromVote(vote),
     init: initials(name),
     vote: vote || null,
-    msg:  msg,
-    own:  true,
-    ts:   null,
+    msg: msg,
+    own: true,
+    ts: null,
   });
 }
 
@@ -543,7 +543,7 @@ function attachCityListeners(db, cityName) {
   } = window._firestoreApi;
 
   // Detach previous listeners
-  if (S._unsubMsgs)  S._unsubMsgs();
+  if (S._unsubMsgs) S._unsubMsgs();
   if (S._unsubVotes) S._unsubVotes();
 
   // Unsubscribe all per-message like listeners
@@ -551,11 +551,11 @@ function attachCityListeners(db, cityName) {
   for (const k in likeListeners) delete likeListeners[k];
 
   // Reset for new city
-  feed.innerHTML  = '';
-  S.seenMsgIds    = new Set();
-  S.votes         = { long: 0, med: 0, short: 0 };
-  S.graphHistory  = [];
-  S.prevWinner    = null;
+  feed.innerHTML = '';
+  S.seenMsgIds = new Set();
+  S.votes = { long: 0, med: 0, short: 0 };
+  S.graphHistory = [];
+  S.prevWinner = null;
   updatePoll();
 
   /* ── timeTakenMessages ── */
@@ -570,7 +570,7 @@ function attachCityListeners(db, cityName) {
     (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === 'added') {
-          const d   = change.doc.data();
+          const d = change.doc.data();
           const own = d.name === S.name;
 
           if (own) {
@@ -582,14 +582,14 @@ function attachCityListeners(db, cityName) {
           }
 
           addMsg({
-            id:   change.doc.id,
-            name: d.name     || 'Anonymous',
+            id: change.doc.id,
+            name: d.name || 'Anonymous',
             role: roleFromVote(d.voteType),
             init: initials(d.name),
             vote: d.voteType || null,
-            msg:  d.message  || '',
+            msg: d.message || '',
             own,
-            ts:   d.timestamp?.toMillis?.() || null,
+            ts: d.timestamp?.toMillis?.() || null,
           });
         }
       });
@@ -612,8 +612,8 @@ function attachCityListeners(db, cityName) {
     (snap) => {
       if (snap.exists()) {
         const d = snap.data();
-        S.votes.long  = d.long  || 0;
-        S.votes.med   = d.med   || 0;
+        S.votes.long = d.long || 0;
+        S.votes.med = d.med || 0;
         S.votes.short = d.short || 0;
         updatePoll();
       }
@@ -626,14 +626,14 @@ function attachCityListeners(db, cityName) {
     try {
       await addDoc(collection(db, 'timeTakenMessages'), {
         name,
-        message:   msg,
-        voteType:  vote || null,
-        city:      cityName,
+        message: msg,
+        voteType: vote || null,
+        city: cityName,
         timestamp: serverTimestamp(),
       });
       if (vote) {
         await setDoc(votesRef, {
-          [vote]:    increment(1),
+          [vote]: increment(1),
           updatedAt: serverTimestamp(),
         }, { merge: true });
       }
@@ -655,7 +655,69 @@ function waitForFirebase(cb) {
 waitForFirebase((db) => {
   updateCityUI(S.city);
   attachCityListeners(db, S.city);
+  trackOnlinePresence(db);
 });
+
+
+/* ══ ONLINE PRESENCE TRACKING ══ */
+function trackOnlinePresence(db) {
+  const { doc, setDoc, onSnapshot, serverTimestamp, increment, collection, deleteDoc } = window._firestoreApi;
+
+  // Unique session ID for this browser tab
+  const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  const presenceRef = doc(db, 'timeTakenPresence', sessionId);
+  const counterRef = doc(db, 'timeTakenOnlineCount', 'counter');
+  let registered = false;
+
+  // Register this user as online
+  function goOnline() {
+    if (registered) return;
+    registered = true;
+    setDoc(presenceRef, {
+      name: S.name,
+      city: S.city,
+      page: 'time-taken',
+      online: true,
+      lastSeen: serverTimestamp(),
+    }).then(() => {
+      // Increment global online counter
+      setDoc(counterRef, { count: increment(1) }, { merge: true });
+    }).catch(err => console.error('[TrafficIQ] Presence set failed:', err));
+  }
+
+  // Remove presence on leave
+  function goOffline() {
+    if (!registered) return;
+    registered = false;
+    try {
+      setDoc(counterRef, { count: increment(-1) }, { merge: true }).catch(() => { });
+      deleteDoc(presenceRef).catch(() => { });
+    } catch (e) { /* best effort */ }
+  }
+
+  // Heartbeat: update lastSeen every 30s so stale sessions can be cleaned
+  setInterval(() => {
+    if (registered) {
+      setDoc(presenceRef, { lastSeen: serverTimestamp() }, { merge: true }).catch(() => { });
+    }
+  }, 30000);
+
+  // Listen for real online count
+  onSnapshot(counterRef, (snap) => {
+    const count = snap.exists() ? Math.max(0, snap.data().count || 0) : 0;
+    const el = document.getElementById('tbOnline');
+    if (el) animCount('tbOnline', count);
+  });
+
+  goOnline();
+
+  // Cleanup on page leave
+  window.addEventListener('beforeunload', goOffline);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') goOffline();
+    else goOnline();
+  });
+}
 
 
 /* ══ CAST VOTE ══ */
@@ -666,8 +728,8 @@ function castVote(key, btn) {
   gsap.fromTo(btn, { scale: .88 }, { scale: 1, duration: .35, ease: 'back.out(2)' });
 
   const msgs = {
-    long:  ["Reporting 1+ hour delay from where I am. Not moving at all.", "It's bad — easily over an hour. Voted accordingly."],
-    med:   ['Around 30 minutes delay here. Signal is slow but moving.',    'Voted 30 mins — traffic is moderate but steady.'],
+    long: ["Reporting 1+ hour delay from where I am. Not moving at all.", "It's bad — easily over an hour. Voted accordingly."],
+    med: ['Around 30 minutes delay here. Signal is slow but moving.', 'Voted 30 mins — traffic is moderate but steady.'],
     short: ['Almost through! Less than 10 mins from here. Clearing fast!', 'Quick update: voted <10 min. Road opened up!'],
   };
   const msg = msgs[key][Math.floor(Math.random() * msgs[key].length)];
@@ -679,10 +741,10 @@ function castVote(key, btn) {
 
 /* ══ TRIGGER SEND ══ */
 function trigSend(btn) {
-  const msg  = btn.dataset.msg;
+  const msg = btn.dataset.msg;
   const vote = btn.dataset.vote;
-  const inp  = document.getElementById('chatInp');
-  inp.value  = msg;
+  const inp = document.getElementById('chatInp');
+  inp.value = msg;
   inp.focus();
   inp.dataset.pendingVote = vote || '';
   gsap.fromTo(btn, { scale: .9 }, { scale: 1, duration: .3, ease: 'back.out(2)' });
@@ -691,8 +753,8 @@ function trigSend(btn) {
 
 /* ══ MANUAL SEND ══ */
 function sendMsg() {
-  const inp  = document.getElementById('chatInp');
-  const txt  = inp.value.trim();
+  const inp = document.getElementById('chatInp');
+  const txt = inp.value.trim();
   if (!txt) return;
 
   const vote = inp.dataset.pendingVote || null;
@@ -711,7 +773,7 @@ document.getElementById('chatInp').addEventListener('keydown', e => {
 
 
 /* ══ MOBILE PANEL ══ */
-const panel   = document.getElementById('panel');
+const panel = document.getElementById('panel');
 const overlay = document.getElementById('mobOverlay');
 function togglePanel() { panel.classList.toggle('open'); overlay.classList.toggle('show'); }
 document.getElementById('panTog').addEventListener('click', togglePanel);
@@ -719,13 +781,13 @@ document.getElementById('panTog').addEventListener('click', togglePanel);
 
 /* ══ GSAP ENTRANCE ══ */
 window.addEventListener('DOMContentLoaded', () => {
-  gsap.to('#topbar',        { y: 0, opacity: 1, duration: .6,  ease: 'power3.out', delay: .1  });
-  gsap.to('#panel',         { x: 0, opacity: 1, duration: .75, ease: 'power3.out', delay: .25 });
-  gsap.from('.stream',      { opacity: 0, duration: .5, ease: 'power2.out', delay: .35 });
-  gsap.from('.poll-card',   { x: -18, opacity: 0, stagger: .1, duration: .5, ease: 'power2.out', delay: .4 });
+  gsap.to('#topbar', { y: 0, opacity: 1, duration: .6, ease: 'power3.out', delay: .1 });
+  gsap.to('#panel', { x: 0, opacity: 1, duration: .75, ease: 'power3.out', delay: .25 });
+  gsap.from('.stream', { opacity: 0, duration: .5, ease: 'power2.out', delay: .35 });
+  gsap.from('.poll-card', { x: -18, opacity: 0, stagger: .1, duration: .5, ease: 'power2.out', delay: .4 });
   gsap.from('.trend-block', { y: 12, opacity: 0, duration: .5, ease: 'power2.out', delay: .62 });
   gsap.from('.graph-block', { y: 12, opacity: 0, duration: .5, ease: 'power2.out', delay: .70 });
-  gsap.from('.avg-block',   { y: 12, opacity: 0, duration: .5, ease: 'power2.out', delay: .78 });
+  gsap.from('.avg-block', { y: 12, opacity: 0, duration: .5, ease: 'power2.out', delay: .78 });
   setTimeout(redrawGraph, 500);
 });
 

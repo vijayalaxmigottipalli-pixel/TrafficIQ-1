@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, addDoc, onSnapshot,
-  doc, updateDoc, setDoc, increment, query, orderBy,
+  doc, updateDoc, setDoc, deleteDoc, increment, query, orderBy,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -17,12 +17,12 @@ const firebaseConfig = {
   measurementId: "G-N8CC0BE6HS"
 };
 
-const app  = initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db   = getFirestore(app);
+const db = getFirestore(app);
 
 /* ── City / room setup ───────────────────────────── */
-const params  = new URLSearchParams(window.location.search);
+const params = new URLSearchParams(window.location.search);
 const urlCity = params.get("city");
 if (urlCity) localStorage.setItem("tiq-city", urlCity);
 
@@ -33,20 +33,20 @@ if (!ROOM_ID) {
   throw new Error("City missing");
 }
 
-const roomRef     = doc(db, "trafficRooms", ROOM_ID);
+const roomRef = doc(db, "trafficRooms", ROOM_ID);
 const messagesRef = collection(db, "trafficRooms", ROOM_ID, "messages");
 
-window.db   = db;
+window.db = db;
 window.auth = auth;
 
 /* ══ THREE.JS HIGHWAY BACKGROUND ══ */
 'use strict';
 (function initBG() {
-  const canvas   = document.getElementById('bg');
+  const canvas = document.getElementById('bg');
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   renderer.setSize(innerWidth, innerHeight);
-  const scene  = new THREE.Scene();
+  const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const mat = new THREE.ShaderMaterial({
     transparent: true,
@@ -99,11 +99,11 @@ window.auth = auth;
 
 /* ══ STATE ══ */
 const S = {
-  theme:     localStorage.getItem('tiq-theme') || 'dark',
-  city:      localStorage.getItem('tiq-city')  || 'Mumbai',
-  name:      localStorage.getItem('tiq-name')  || 'You',
-  goVotes:   0,
-  noVotes:   0,
+  theme: localStorage.getItem('tiq-theme') || 'dark',
+  city: localStorage.getItem('tiq-city') || 'Mumbai',
+  name: localStorage.getItem('tiq-name') || 'You',
+  goVotes: 0,
+  noVotes: 0,
   userVoted: false,
   /* like persistence — keyed separately from shortcuts page */
   likedKeys: new Set(JSON.parse(localStorage.getItem('tiq-tt-liked-keys') || '[]')),
@@ -128,7 +128,7 @@ document.getElementById('tbCity').textContent = S.city;
 
 /* ══ VOTE ENGINE ══ */
 const REASONS = {
-  go:    ['Traffic clearing in ~10 mins', 'Road looks manageable now', 'Alternate lane open, moving well', 'Service road bypass confirmed clear'],
+  go: ['Traffic clearing in ~10 mins', 'Road looks manageable now', 'Alternate lane open, moving well', 'Service road bypass confirmed clear'],
   avoid: ['Accident reported ahead', 'Heavy congestion at junction', 'Avoid flyover — completely jammed', '30+ min delay reported by locals'],
 };
 
@@ -151,7 +151,7 @@ function animateCount(elId, target, suffix = '') {
   const start = parseInt(el.textContent) || 0;
   const t0 = performance.now();
   (function step(now) {
-    const p    = Math.min((now - t0) / 700, 1);
+    const p = Math.min((now - t0) / 700, 1);
     const ease = 1 - Math.pow(1 - p, 3);
     el.textContent = Math.round(start + (target - start) * ease) + suffix;
     if (p < 1) countTimers[elId] = requestAnimationFrame(step);
@@ -159,10 +159,10 @@ function animateCount(elId, target, suffix = '') {
 }
 
 function updatePanel() {
-  const total    = S.goVotes + S.noVotes;
-  const goP      = total ? Math.round((S.goVotes / total) * 100) : 0;
-  const noP      = total ? 100 - goP : 0;
-  const risk     = calcRisk();
+  const total = S.goVotes + S.noVotes;
+  const goP = total ? Math.round((S.goVotes / total) * 100) : 0;
+  const noP = total ? 100 - goP : 0;
+  const risk = calcRisk();
   const majority = goP >= noP ? 'go' : 'avoid';
 
   animateCount('tbVotes', total);
@@ -180,19 +180,19 @@ function updatePanel() {
   animateCount('riskNum', risk);
 
   const riskNumEl = document.getElementById('riskNum');
-  const stop1     = document.getElementById('riskStop1');
-  const stop2     = document.getElementById('riskStop2');
+  const stop1 = document.getElementById('riskStop1');
+  const stop2 = document.getElementById('riskStop2');
   let rColor, rLabel, rGlow;
-  if (risk < 35)      { rColor = '#22c55e'; rLabel = 'Low Risk — Safe to proceed';   rGlow = 'rgba(34,197,94,.5)'; }
-  else if (risk < 65) { rColor = '#f59e0b'; rLabel = 'Moderate Risk — Use caution';  rGlow = 'rgba(245,158,11,.5)'; }
-  else                { rColor = '#ef4444'; rLabel = 'High Risk — Consider avoiding'; rGlow = 'rgba(239,68,68,.5)'; }
+  if (risk < 35) { rColor = '#22c55e'; rLabel = 'Low Risk — Safe to proceed'; rGlow = 'rgba(34,197,94,.5)'; }
+  else if (risk < 65) { rColor = '#f59e0b'; rLabel = 'Moderate Risk — Use caution'; rGlow = 'rgba(245,158,11,.5)'; }
+  else { rColor = '#ef4444'; rLabel = 'High Risk — Consider avoiding'; rGlow = 'rgba(239,68,68,.5)'; }
   riskNumEl.style.color = rColor;
   stop1.setAttribute('stop-color', rColor);
   stop2.setAttribute('stop-color', rColor);
   ring.style.filter = `drop-shadow(0 0 6px ${rGlow})`;
   document.getElementById('riskLabelTxt').textContent = rLabel;
 
-  const badge   = document.getElementById('recBadge');
+  const badge = document.getElementById('recBadge');
   const recIcon = document.getElementById('recIcon');
   const recText = document.getElementById('recText');
   badge.classList.remove('go-rec', 'avoid-rec');
@@ -211,8 +211,8 @@ function updatePanel() {
 
   if (total > 0) {
     const reason = getTopReason();
-    const dot    = document.getElementById('reasonDot');
-    const txt    = document.getElementById('reasonTxt');
+    const dot = document.getElementById('reasonDot');
+    const txt = document.getElementById('reasonTxt');
     txt.textContent = reason;
     if (majority === 'go') {
       dot.style.background = '#22c55e'; dot.style.boxShadow = '0 0 6px rgba(34,197,94,.6)';
@@ -226,7 +226,7 @@ function updatePanel() {
 
 onSnapshot(roomRef, docSnap => {
   if (!docSnap.exists()) return;
-  const data   = docSnap.data();
+  const data = docSnap.data();
   S.goVotes = data.goVotes || 0;
   S.noVotes = data.noVotes || 0;
   updatePanel();
@@ -244,7 +244,7 @@ async function castVote(type, btn) {
     });
 
     /* ripple */
-    const rc  = btn.querySelector('.ripple-c');
+    const rc = btn.querySelector('.ripple-c');
     const rip = document.createElement('span');
     rip.className = 'ripple';
     rip.style.cssText = 'width:100px;height:100px;left:0px;top:0px';
@@ -256,13 +256,13 @@ async function castVote(type, btn) {
     document.getElementById('avoidBtn').classList.add('voted');
 
     const msgs = {
-      go:    ['I just voted GO — traffic looks fine from my end.', "Went in — it's moving. Voted GO!"],
+      go: ['I just voted GO — traffic looks fine from my end.', "Went in — it's moving. Voted GO!"],
       avoid: ["Voted AVOID — don't risk it right now.", 'Voting NO — still pretty bad ahead.'],
     };
     await addDoc(messagesRef, {
       name: S.name, role: type === 'go' ? 'g' : 'r',
       init: S.name.substring(0, 2).toUpperCase(), vote: type,
-      msg:  msgs[type][Math.floor(Math.random() * msgs[type].length)],
+      msg: msgs[type][Math.floor(Math.random() * msgs[type].length)],
       createdAt: serverTimestamp(),
     });
   } catch (err) {
@@ -296,29 +296,29 @@ function likeMessage(msgId, authorName, btnEl) {
   gsap.fromTo(btnEl, { scale: 1.4 }, { scale: 1, duration: .4, ease: 'back.out(2)' });
 
   const msgLikeCountRef = doc(db, 'messageLikeCounts', msgId);
-  const authorDocRef    = doc(db, 'message_likes', authorName);
-  const likerDocRef     = doc(db, 'message_likes', authorName, 'likers', safeKey);
+  const authorDocRef = doc(db, 'message_likes', authorName);
+  const likerDocRef = doc(db, 'message_likes', authorName, 'likers', safeKey);
 
   setDoc(likerDocRef, {
     likedAt: serverTimestamp(), liker: S.name, msgId, page: 'time-taken',
   })
-  .then(() => Promise.all([
-    setDoc(msgLikeCountRef,
-      { likeCount: increment(1), lastUpdated: serverTimestamp() },
-      { merge: true }),
-    setDoc(authorDocRef,
-      { authorName, likeCount: increment(1), lastUpdated: serverTimestamp() },
-      { merge: true }),
-  ]))
-  .then(() => console.log('[TrafficIQ] ✅ Like saved (time-taken). msgId:', msgId, '| author:', authorName))
-  .catch(err => {
-    console.error('[TrafficIQ] Like failed:', err);
-    S.likedKeys.delete(likeKey);
-    persistLiked();
-    btnEl.classList.remove('liked');
-    btnEl.disabled = false;
-    if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent || '1') - 1);
-  });
+    .then(() => Promise.all([
+      setDoc(msgLikeCountRef,
+        { likeCount: increment(1), lastUpdated: serverTimestamp() },
+        { merge: true }),
+      setDoc(authorDocRef,
+        { authorName, likeCount: increment(1), lastUpdated: serverTimestamp() },
+        { merge: true }),
+    ]))
+    .then(() => console.log('[TrafficIQ] ✅ Like saved (time-taken). msgId:', msgId, '| author:', authorName))
+    .catch(err => {
+      console.error('[TrafficIQ] Like failed:', err);
+      S.likedKeys.delete(likeKey);
+      persistLiked();
+      btnEl.classList.remove('liked');
+      btnEl.disabled = false;
+      if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent || '1') - 1);
+    });
 }
 
 /* ══ LIVE LIKE COUNT LISTENER ══
@@ -353,9 +353,9 @@ function subscribeLikes(msgId, btnEl) {
 }
 
 /* ══ FEED ══ */
-const feed        = document.getElementById('feed');
-const scrollBtn   = document.getElementById('scrollBtn');
-let userScrolled  = false;
+const feed = document.getElementById('feed');
+const scrollBtn = document.getElementById('scrollBtn');
+let userScrolled = false;
 const renderedIds = new Set();
 
 feed.addEventListener('scroll', () => {
@@ -369,7 +369,7 @@ function scrollToBottom() {
 }
 function timeStr() {
   const n = new Date();
-  return `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
+  return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
 }
 
 /* ══ ADD MESSAGE ══ */
@@ -377,12 +377,12 @@ function addMsg({ id, name, role, init, vote = null, msg, own = false }) {
   if (id && renderedIds.has(id)) return;
   if (id) renderedIds.add(id);
 
-  const isTemp       = !id || id.startsWith('temp-');
-  const likeKey      = S.name + '__' + id;
+  const isTemp = !id || id.startsWith('temp-');
+  const likeKey = S.name + '__' + id;
   const alreadyLiked = !isTemp && S.likedKeys.has(likeKey);
-  const isOwnMsg     = name === S.name;
+  const isOwnMsg = name === S.name;
 
-  const voteChip    = vote
+  const voteChip = vote
     ? `<span class="vote-chip ${vote}">${vote === 'go' ? '✓ GO' : '✕ AVOID'}</span>`
     : '';
   const bubbleClass = vote ? `bubble ${vote}-bubble` : 'bubble';
@@ -449,13 +449,13 @@ onSnapshot(q, snapshot => {
     if (change.type !== 'added') return;
     const d = change.doc.data();
     addMsg({
-      id:   change.doc.id,
+      id: change.doc.id,
       name: d.name || 'User',
       role: d.role || 'b',
       init: d.init || (d.name || 'U').substring(0, 2).toUpperCase(),
       vote: d.vote || null,
-      msg:  d.msg  || '',
-      own:  d.name === S.name,
+      msg: d.msg || '',
+      own: d.name === S.name,
     });
   });
 });
@@ -464,7 +464,7 @@ onSnapshot(q, snapshot => {
 async function trigSend(btn) {
   if (S.userVoted) return;
   S.userVoted = true;
-  const msg  = btn.dataset.msg;
+  const msg = btn.dataset.msg;
   const vote = btn.dataset.vote;
   await updateDoc(roomRef, {
     [vote === 'go' ? 'goVotes' : 'noVotes']: increment(1),
@@ -505,16 +505,16 @@ document.getElementById('panTog').addEventListener('click', togglePanel);
 
 /* ══ GSAP ENTRANCE + EVENT WIRING ══ */
 window.addEventListener('DOMContentLoaded', () => {
-  gsap.to('#topbar',           { y: 0, opacity: 1, duration: .6,  ease: 'power3.out', delay: .1  });
-  gsap.to('#panel',            { x: 0, opacity: 1, duration: .75, ease: 'power3.out', delay: .25 });
-  gsap.from('.stream',         { opacity: 0, duration: .5, ease: 'power2.out', delay: .35 });
+  gsap.to('#topbar', { y: 0, opacity: 1, duration: .6, ease: 'power3.out', delay: .1 });
+  gsap.to('#panel', { x: 0, opacity: 1, duration: .75, ease: 'power3.out', delay: .25 });
+  gsap.from('.stream', { opacity: 0, duration: .5, ease: 'power2.out', delay: .35 });
   gsap.from('.question-block', { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .42 });
   gsap.from('.majority-block', { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .52 });
-  gsap.from('.votebar-block',  { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .60 });
-  gsap.from('.risk-block',     { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .68 });
-  gsap.from('.rec-block',      { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .74 });
-  gsap.from('.reason-block',   { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .80 });
-  gsap.from('.vote-btns',      { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .86 });
+  gsap.from('.votebar-block', { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .60 });
+  gsap.from('.risk-block', { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .68 });
+  gsap.from('.rec-block', { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .74 });
+  gsap.from('.reason-block', { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .80 });
+  gsap.from('.vote-btns', { y: 14, opacity: 0, duration: .5, ease: 'power2.out', delay: .86 });
 
   document.getElementById('goBtn')
     .addEventListener('click', function () { castVote('go', this); });
@@ -537,3 +537,56 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   });
 });
+
+
+/* ══ ONLINE PRESENCE TRACKING ══ */
+(function trackOnlinePresence() {
+  const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  const presenceRef = doc(db, 'enterTrafficPresence', sessionId);
+  const counterRef = doc(db, 'enterTrafficOnlineCount', 'counter');
+  let registered = false;
+
+  function goOnline() {
+    if (registered) return;
+    registered = true;
+    setDoc(presenceRef, {
+      name: S.name,
+      city: S.city,
+      page: 'enter-traffic',
+      online: true,
+      lastSeen: serverTimestamp(),
+    }).then(() => {
+      setDoc(counterRef, { count: increment(1) }, { merge: true });
+    }).catch(err => console.error('[TrafficIQ] Presence set failed:', err));
+  }
+
+  function goOffline() {
+    if (!registered) return;
+    registered = false;
+    try {
+      setDoc(counterRef, { count: increment(-1) }, { merge: true }).catch(() => { });
+      deleteDoc(presenceRef).catch(() => { });
+    } catch (e) { /* best effort */ }
+  }
+
+  // Heartbeat: update lastSeen every 30s
+  setInterval(() => {
+    if (registered) {
+      setDoc(presenceRef, { lastSeen: serverTimestamp() }, { merge: true }).catch(() => { });
+    }
+  }, 30000);
+
+  // Listen for real online count
+  onSnapshot(counterRef, (snap) => {
+    const count = snap.exists() ? Math.max(0, snap.data().count || 0) : 0;
+    animateCount('tbOnline', count);
+  });
+
+  goOnline();
+
+  window.addEventListener('beforeunload', goOffline);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') goOffline();
+    else goOnline();
+  });
+})();
