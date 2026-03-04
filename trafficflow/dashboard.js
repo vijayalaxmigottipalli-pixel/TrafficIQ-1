@@ -1,31 +1,31 @@
-/* TrafficIQ — dashboard.js (Leaflet + OpenStreetMap Edition) */
+/* TrafficIQ — dashboard.js (Leaflet + Firestore Presence Edition) */
 'use strict';
 
+// 🔥 Gemini API
+const GEMINI_API_KEY = "AIzaSyBCbvaciaICSSvKYaqKfbWEvgnFZk5UVzs";
+const GEMINI_URL     = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
 /* ══════════════════════════════════════════════
-   BHIMAVARAM — City data & local landmarks
+   BHIMAVARAM — City data & landmarks
 ══════════════════════════════════════════════ */
-const BHIMAVARAM = {
-  lat: 16.5449, lon: 81.5212,
-};
+const BHIMAVARAM = { lat: 16.5449, lon: 81.5212 };
 
 const BHIMAVARAM_PLACES = [
-  { name: 'Sagi Ramakrishnam Raju Engineering College', lat: 16.5432, lon: 81.4964, type: 'College' },
+  { name: 'Sagi Ramakrishnam Raju Engineering College', lat: 16.5432, lon: 81.4964, type: 'College'   },
   { name: 'Vishnu College',             lat: 16.5092, lon: 81.5219, type: 'College'   },
   { name: 'RTC Bus Stand',              lat: 16.5449, lon: 81.5205, type: 'Transport' },
   { name: 'Bhimavaram Railway Station', lat: 16.5385, lon: 81.5274, type: 'Transport' },
   { name: 'Government Hospital',        lat: 16.5438, lon: 81.5230, type: 'Hospital'  },
 ];
 
-const TYPE_ICON = {
-  College: '🎓', Transport: '🚌', Hospital: '🏥',
-};
+const TYPE_ICON = { College: '🎓', Transport: '🚌', Hospital: '🏥' };
 
 /* ══════════════════════════════════════════════
-   ENHANCED VEHICLE SVGs
+   VEHICLE SVGs
 ══════════════════════════════════════════════ */
 const VEH = {
   car: `<svg width="52" height="80" viewBox="0 0 52 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <ellipse cx="26" cy="73" rx="18" ry="5" fill="rgba(0,0,0,0.18)" />
+  <ellipse cx="26" cy="73" rx="18" ry="5" fill="rgba(0,0,0,0.18)"/>
   <rect x="8" y="10" width="36" height="58" rx="10" fill="#2563EB"/>
   <rect x="11" y="12" width="30" height="54" rx="8" fill="#3B82F6"/>
   <rect x="13" y="22" width="26" height="28" rx="5" fill="#1D4ED8"/>
@@ -138,68 +138,72 @@ const VEH = {
    STATE
 ══════════════════════════════════════════════ */
 const S = {
-  theme:   localStorage.getItem('tiq-theme') || 'light',
-  name:    localStorage.getItem('tiq-name')  || 'there',
-  vehicle: 'car',
+  theme:        localStorage.getItem('tiq-theme') || 'light',
+  name:         localStorage.getItem('tiq-name')  || 'there',
+  vehicle:      'car',
+  currentPlace: 'Bhimavaram',
+  currentLevel: 'Low',
+  currentCong:  0,
 };
 
 /* ══════════════════════════════════════════════
-   CITIES COLLECTION — LIVE LISTENER
-   Reads: cities/{cityName}
-   Fields:
-     congestionIndex  (number 0–100) → bar %
-     activeReporters  (number)       → reporter count
-     aiSummary        (string)       → AI summary text
-     avgDelay         (string)       → e.g. "15 min"
-     hotspot          (string)       → e.g. "RTC Bus Stand"
-   No enter_traffic_messages used here at all.
+   LIVE USERS — Updated by Firebase module in HTML
+   This function is called automatically whenever
+   the Firestore presence collection changes.
+══════════════════════════════════════════════ */
+function updateLiveUsers(count) {
+  const rctEl = document.getElementById('rct');
+  const avsEl = document.getElementById('avs');
+
+  if (rctEl) {
+    const from = parseInt(rctEl.textContent) || 0;
+    if (isNaN(from) || from !== count) animateCounter(rctEl, isNaN(from) ? 0 : from, count, 700);
+  }
+
+  if (avsEl) {
+    const EMOJIS = ['👨', '👩', '🧑', '👦', '👧', '🧔'];
+    const show   = Math.min(count, 6);
+    avsEl.innerHTML = show > 0
+      ? Array.from({ length: show }, (_, i) => `<div class="av">${EMOJIS[i % EMOJIS.length]}</div>`).join('')
+      : '<div class="av" style="opacity:.4">👤</div>';
+  }
+}
+
+// Expose so the Firebase module in dashboard.html can call it
+window.updateLiveUsers = updateLiveUsers;
+
+// Handle any count that arrived before dashboard.js was parsed
+if (typeof window.__pendingUserCount === 'number') {
+  updateLiveUsers(window.__pendingUserCount);
+  delete window.__pendingUserCount;
+}
+
+/* ══════════════════════════════════════════════
+   CITIES — FIRESTORE LIVE LISTENER (congestion only)
 ══════════════════════════════════════════════ */
 let _unsubCityDoc = null;
 
 function startCityDocListener(cityName) {
-  // ── Cancel any previous listener ──
   if (_unsubCityDoc) { _unsubCityDoc(); _unsubCityDoc = null; }
-
-  // ── No specific city → reset to zero ──
   if (!cityName || cityName === 'Bhimavaram') {
-    applyCityStats(0, 0, null);
+    applyCongestionStats(0, null);
     return;
   }
-
-  // ── Real-time listener on cities/{cityName} ──
-  const cityDocRef = doc(db, 'cities', cityName);
-
-  _unsubCityDoc = onSnapshot(cityDocRef, (snap) => {
-    if (!snap.exists()) {
-      // Doc not in Firestore yet → show zeros
-      applyCityStats(0, 0, null);
-      return;
-    }
-
-    const d = snap.data();
-
-    // congestionIndex is a number 0–100 in your DB
-    const congPct       = typeof d.congestionIndex === 'number'
-                            ? Math.min(100, Math.max(0, d.congestionIndex))
-                            : 0;
-
-    // activeReporters is a number
-    const reporterCount = typeof d.activeReporters === 'number'
-                            ? d.activeReporters
-                            : 0;
-
-    applyCityStats(congPct, reporterCount, d);
-
-  }, (error) => {
-    console.warn('[TrafficIQ] cities listener error:', error);
-    applyCityStats(0, 0, null);
+  const cityDocRef = window.doc(window.db, 'cities', cityName);
+  _unsubCityDoc = window.onSnapshot(cityDocRef, (snap) => {
+    if (!snap.exists()) { applyCongestionStats(0, null); return; }
+    const d       = snap.data();
+    const congPct = typeof d.congestionIndex === 'number'
+      ? Math.min(100, Math.max(0, d.congestionIndex)) : 0;
+    applyCongestionStats(congPct, d);
+  }, (err) => {
+    console.warn('[TrafficIQ] cities listener error:', err);
+    applyCongestionStats(0, null);
   });
 }
 
-/* ── Apply all 3 blocks from cities doc data ── */
-function applyCityStats(congPct, reporterCount, data) {
-
-  // ── 1. LIVE CONGESTION ──
+/* ── Congestion UI update ── */
+function applyCongestionStats(congPct, data) {
   const cfill = document.getElementById('cfill');
   if (cfill) {
     cfill.style.transition = 'width 1.8s cubic-bezier(.4,0,.2,1)';
@@ -211,29 +215,7 @@ function applyCityStats(congPct, reporterCount, data) {
                      : congPct > 45 ? 'Moderate 🟡'
                      :                'Low 🟢';
   }
-
-  // ── 2. ACTIVE REPORTERS ──
-  const rctEl = document.getElementById('rct');
-  if (rctEl) {
-    const from = parseInt(rctEl.textContent) || 0;
-    animateCounter(rctEl, from, reporterCount, 600);
-  }
-  const avsEl = document.getElementById('avs');
-  if (avsEl) {
-    const EMOJIS = ['👨','👩','🧑','👦','👧','🧔','🙋','🙍'];
-    const show   = Math.min(reporterCount, 6);
-    avsEl.innerHTML = show > 0
-      ? Array.from({ length: show }, (_, i) => `<div class="av">${EMOJIS[i]}</div>`).join('')
-      : '<div class="av">👤</div>';
-  }
-
-  // ── 3. AI SUMMARY + META ──
   if (data) {
-    // aiSummary field → typed into the AI Summary card
-    if (data.aiSummary) {
-      typeAiSummary(data.aiSummary);
-    }
-    // avgDelay + hotspot → meta row
     const adlyEl = document.getElementById('adly');
     const asptEl = document.getElementById('aspt');
     if (adlyEl && data.avgDelay) adlyEl.textContent = data.avgDelay;
@@ -241,7 +223,19 @@ function applyCityStats(congPct, reporterCount, data) {
   }
 }
 
-/* ── Typewriter effect for AI summary text ── */
+/* ── Simulated congestion bar (not users) ── */
+function applySimulatedCongestion(congPct) {
+  const cfill = document.getElementById('cfill');
+  if (cfill) cfill.style.width = congPct + '%';
+  const clvl = document.getElementById('clvl');
+  if (clvl) {
+    clvl.textContent = congPct > 70 ? 'Heavy 🔴'
+                     : congPct > 45 ? 'Moderate 🟡'
+                     :                'Low 🟢';
+  }
+}
+
+/* ── Typewriter for AI summary ── */
 let _aiTypeTimer = null;
 function typeAiSummary(text) {
   const at = document.getElementById('aitxt');
@@ -269,7 +263,41 @@ function animateCounter(el, from, to, durationMs) {
 }
 
 /* ══════════════════════════════════════════════
-   KEY HELPERS
+   AI SUMMARY — MANUAL REFRESH ONLY
+══════════════════════════════════════════════ */
+async function generateGeminiSummary(place, trafficLevel) {
+  const prompt = `You are a smart urban traffic AI assistant.\n\nTraffic near ${place} is currently ${trafficLevel}.\n\nGenerate a realistic 2-3 line live traffic update. Mention possible reasons like signals, peak hours, construction work, or local events.\n\nKeep it natural and helpful.`;
+  try {
+    const res = await fetch(GEMINI_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Traffic data is being analyzed...';
+    typeAiSummary(text);
+  } catch (err) {
+    console.error('Gemini error:', err);
+    typeAiSummary('Unable to generate AI summary at the moment.');
+  }
+}
+
+function onAiRefreshClick() {
+  const btn = document.getElementById('aiRefreshBtn');
+  if (!btn) return;
+  btn.classList.add('spinning');
+  btn.disabled = true;
+  const at = document.getElementById('aitxt');
+  if (at) at.textContent = 'Generating summary…';
+  generateGeminiSummary(S.currentPlace, S.currentLevel).finally(() => {
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+  });
+}
+window.onAiRefreshClick = onAiRefreshClick;
+
+/* ══════════════════════════════════════════════
+   HELPERS
 ══════════════════════════════════════════════ */
 function setCityEverywhere(cityName) {
   localStorage.setItem('tiq-selected-place', cityName);
@@ -287,45 +315,40 @@ function updateNavLinks(cityName) {
 }
 
 /* ══════════════════════════════════════════════
-   LEAFLET MAP SETUP
+   LEAFLET MAP
 ══════════════════════════════════════════════ */
 let map, userMarker = null, searchMarker = null;
 const BHIMAVARAM_BOUNDS = L.latLngBounds([16.500, 81.460], [16.600, 81.560]);
 
 function initMap() {
   map = L.map('map', {
-    center: [BHIMAVARAM.lat, BHIMAVARAM.lon],
-    zoom: 15, minZoom: 13, maxZoom: 19,
-    maxBounds: BHIMAVARAM_BOUNDS, maxBoundsViscosity: 0.9,
-    zoomControl: true, attributionControl: true,
+    center:              [BHIMAVARAM.lat, BHIMAVARAM.lon],
+    zoom:                15,
+    minZoom:             13,
+    maxZoom:             19,
+    maxBounds:           BHIMAVARAM_BOUNDS,
+    maxBoundsViscosity:  0.9,
+    zoomControl:         true,
+    attributionControl:  true,
   });
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
   }).addTo(map);
   map.zoomControl.setPosition('bottomright');
-  setTimeout(() => map.invalidateSize(), 100);
-  setTimeout(() => map.invalidateSize(), 400);
-  setTimeout(() => map.invalidateSize(), 800);
+  [100, 400, 800].forEach(ms => setTimeout(() => map.invalidateSize(), ms));
   window.addEventListener('resize', () => map.invalidateSize());
 }
 
 function makeVehicleIcon(type) {
-  const svg = VEH[type] || VEH.car;
+  const svg   = VEH[type] || VEH.car;
   const sizes = { car:[52,80], bike:[36,82], auto:[60,78] };
-  const sz = sizes[type] || sizes.car;
+  const sz    = sizes[type] || sizes.car;
   return L.divIcon({
-    className: 'vehicle-marker-icon',
-    html: `<div class="vehicle-pin">${svg}<div class="pin-pulse"></div></div>`,
-    iconAnchor: [sz[0]/2, sz[1]], iconSize: [sz[0], sz[1]+8],
-  });
-}
-
-function makeSearchIcon() {
-  return L.divIcon({
-    className: 'vehicle-marker-icon',
-    html: `<div class="search-pin"></div>`,
-    iconAnchor: [10, 20], iconSize: [20, 20],
+    className:  'vehicle-marker-icon',
+    html:       `<div class="vehicle-pin">${svg}<div class="pin-pulse"></div></div>`,
+    iconAnchor: [sz[0]/2, sz[1]],
+    iconSize:   [sz[0], sz[1]+8],
   });
 }
 
@@ -363,11 +386,9 @@ locInput.addEventListener('input', () => {
     p.name.toLowerCase().includes(q) || p.type.toLowerCase().includes(q)
   ));
 });
-
 locInput.addEventListener('focus', () => {
-  if (!locInput.value.toLowerCase().trim()) renderLocDrop(BHIMAVARAM_PLACES);
+  if (!locInput.value.trim()) renderLocDrop(BHIMAVARAM_PLACES);
 });
-
 document.addEventListener('click', e => {
   const search = document.getElementById('locationSearch');
   if (search && !search.contains(e.target)) locDrop.classList.remove('open');
@@ -381,7 +402,7 @@ function selectPlace(lat, lon, name, type) {
   localStorage.setItem('tiq-selected-lat', lat);
   localStorage.setItem('tiq-selected-lon', lon);
   if (searchMarker) { map.removeLayer(searchMarker); searchMarker = null; }
-  if (userMarker) map.removeLayer(userMarker);
+  if (userMarker)   map.removeLayer(userMarker);
   userMarker = L.marker([lat, lon], { icon: makeVehicleIcon(S.vehicle), zIndexOffset: 1000 }).addTo(map);
   userMarker.bindPopup(
     `<b>${name}</b><br><small>${type} · ${S.vehicle.charAt(0).toUpperCase()+S.vehicle.slice(1)}</small>`,
@@ -390,6 +411,7 @@ function selectPlace(lat, lon, name, type) {
   map.flyTo([lat, lon], 17, { animate: true, duration: 1.1, easeLinearity: 0.3 });
   populate(name);
 }
+window.selectPlace = selectPlace;
 
 function clearLocSearch() {
   locInput.value = '';
@@ -399,20 +421,27 @@ function clearLocSearch() {
   localStorage.removeItem('tiq-selected-lat');
   localStorage.removeItem('tiq-selected-lon');
   localStorage.removeItem('tiq-city');
-  // Stop listener and reset blocks when search is cleared
   if (_unsubCityDoc) { _unsubCityDoc(); _unsubCityDoc = null; }
-  applyCityStats(0, 0, null);
+  applyCongestionStats(0, null);
+  const at = document.getElementById('aitxt');
+  if (at) at.textContent = 'Press Refresh to generate AI summary.';
   locInput.focus();
 }
+window.clearLocSearch = clearLocSearch;
 
 /* ══════════════════════════════════════════════
    GPS
 ══════════════════════════════════════════════ */
 function showGPSToast(msg) {
   const t = document.getElementById('gpsTst');
-  t.textContent = msg; t.style.display = 'block'; t.style.opacity = '1';
+  t.textContent = msg;
+  t.style.display = 'block';
+  t.style.opacity = '1';
   clearTimeout(t._timer);
-  t._timer = setTimeout(() => { t.style.opacity = '0'; setTimeout(() => { t.style.display = 'none'; }, 500); }, 3200);
+  t._timer = setTimeout(() => {
+    t.style.opacity = '0';
+    setTimeout(() => { t.style.display = 'none'; }, 500);
+  }, 3200);
 }
 
 function nearestPlace(lat, lon) {
@@ -461,31 +490,29 @@ function showOverlayError(msg) {
   btn.classList.remove('loading');
   btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg> Try Again`;
   err.style.display = 'block';
-  err.textContent = msg;
+  err.textContent   = msg;
 }
 
-/* ══════════════════════════════════════════════
-   OVERLAY HANDLERS
-══════════════════════════════════════════════ */
 function overlayAllowLocation() {
-  if (!navigator.geolocation) { showOverlayError('GPS is not supported on this device. Continue without location.'); return; }
+  if (!navigator.geolocation) { showOverlayError('GPS is not supported on this device.'); return; }
   const btn = document.getElementById('locOverlayBtn');
   const err = document.getElementById('locOverlayError');
   btn.classList.add('loading');
-  btn.innerHTML = 'Getting location…';
+  btn.innerHTML    = 'Getting location…';
   err.style.display = 'none';
   navigator.geolocation.getCurrentPosition(
     pos => onGPSSuccess(pos.coords.latitude, pos.coords.longitude),
-    err => {
+    e => {
       let msg = '';
-      if (err.code === 1) msg = '🔒 Location blocked. Open browser Settings → Site Settings → Location and set to "Allow", then tap Try Again.';
-      else if (err.code === 2) msg = '📡 Could not detect location. Make sure GPS / Location is ON in your device settings.';
-      else msg = '⏱ Location timed out. Check your connection and try again.';
+      if      (e.code === 1) msg = '🔒 Location blocked. Open browser Settings → Site Settings → Location, set to "Allow", then try again.';
+      else if (e.code === 2) msg = '📡 Could not detect location. Make sure GPS is ON.';
+      else                   msg = '⏱ Location timed out. Check your connection and try again.';
       showOverlayError(msg);
     },
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
   );
 }
+window.overlayAllowLocation = overlayAllowLocation;
 
 function overlaySkipLocation() {
   dismissOverlay();
@@ -505,13 +532,7 @@ function overlaySkipLocation() {
   }
   showGPSToast('📍 Showing Bhimavaram — search to change location');
 }
-
-function updateCityButton(name) {
-  document.getElementById('cname').textContent = name;
-  setCityEverywhere(name);
-  updateNavLinks(name);
-  gsap.fromTo('#cityBtn', { scale: 0.94 }, { scale: 1, duration: 0.35, ease: 'back.out(1.7)' });
-}
+window.overlaySkipLocation = overlaySkipLocation;
 
 /* ══════════════════════════════════════════════
    VEHICLE SELECTOR
@@ -520,7 +541,7 @@ const VEH_LABELS = { car: 'Car', bike: 'Motorcycle', auto: 'Auto Rickshaw' };
 
 function showVehiclePreview(type) {
   const panel = document.getElementById('vehPreview');
-  document.getElementById('vehPreviewSvg').innerHTML = VEH[type];
+  document.getElementById('vehPreviewSvg').innerHTML   = VEH[type];
   document.getElementById('vehPreviewLabel').textContent = VEH_LABELS[type] || type;
   panel.classList.add('show');
   clearTimeout(panel._timer);
@@ -534,32 +555,33 @@ function setV(type, btn) {
   showVehiclePreview(type);
   if (userMarker) userMarker.setIcon(makeVehicleIcon(type));
 }
+window.setV = setV;
 
 /* ══════════════════════════════════════════════
    MAP ZOOM CONTROLS
 ══════════════════════════════════════════════ */
-function animateZoomBtn(btnId) {
-  const btn = document.getElementById(btnId);
+function animateZoomBtn(id) {
+  const btn = document.getElementById(id);
   if (!btn) return;
   btn.classList.add('zoom-active');
   setTimeout(() => btn.classList.remove('zoom-active'), 320);
 }
-
 function updateZoomPct() {
   const el = document.getElementById('zoomPct');
   if (el) el.textContent = 'Z ' + map.getZoom();
 }
 
-document.getElementById('zoomIn').addEventListener('click', () => { animateZoomBtn('zoomIn'); map.zoomIn(1, { animate: true }); });
-document.getElementById('zoomOut').addEventListener('click', () => { animateZoomBtn('zoomOut'); map.zoomOut(1, { animate: true }); });
+document.getElementById('zoomIn').addEventListener('click',    () => { animateZoomBtn('zoomIn');    map.zoomIn(1,  { animate: true }); });
+document.getElementById('zoomOut').addEventListener('click',   () => { animateZoomBtn('zoomOut');   map.zoomOut(1, { animate: true }); });
 document.getElementById('zoomReset').addEventListener('click', () => { animateZoomBtn('zoomReset'); map.flyTo([BHIMAVARAM.lat, BHIMAVARAM.lon], 15, { animate: true, duration: 0.8 }); });
 
 /* ══════════════════════════════════════════════
    POPULATE CARDS
-   ★ Only sets city name, username, and GSAP
-     animations. All 3 data blocks (congestion,
-     reporters, AI summary) come from
-     startCityDocListener() → cities collection.
+   ★ Active Users card is NEVER touched here.
+     It is driven exclusively by the Firestore
+     presence listener in dashboard.html.
+   ★ Congestion is simulated.
+   ★ AI Summary requires manual Refresh click.
 ══════════════════════════════════════════════ */
 function populate(locationName) {
   const displayName = locationName || 'Bhimavaram';
@@ -567,22 +589,37 @@ function populate(locationName) {
   document.getElementById('cname').textContent = displayName;
   document.getElementById('uname').textContent = S.name;
 
-  // Show loading state in cards until Firestore responds
+  // Reset AI summary
   const at = document.getElementById('aitxt');
-  if (at) at.textContent = 'Loading…';
+  if (at) at.textContent = 'Press Refresh to generate AI summary.';
+
+  // Reset congestion label
   const clvl = document.getElementById('clvl');
   if (clvl) clvl.textContent = '–';
-  const rctEl = document.getElementById('rct');
-  if (rctEl) rctEl.textContent = '0';
 
-  // ── Animate panel & cards ──
+  // Animate panel in
   gsap.to('#panel', { opacity: 1, duration: .5, delay: .15 });
   gsap.fromTo('.card', { y: 16, opacity: 0 }, {
     y: 0, opacity: 1, stagger: .1, duration: .5, ease: 'power2.out', delay: .25,
   });
 
-  // ★ Start real-time listener → cities/{displayName}
-  startCityDocListener(displayName);
+  // Simulate congestion (bar only — NOT users)
+  const levels     = ['Low', 'Moderate', 'Heavy'];
+  const randomLvl  = levels[Math.floor(Math.random() * 3)];
+  let   congestion = 0;
+
+  if      (randomLvl === 'Low')      congestion = Math.floor(Math.random() * 30);
+  else if (randomLvl === 'Moderate') congestion = Math.floor(Math.random() * 40) + 40;
+  else                               congestion = Math.floor(Math.random() * 30) + 70;
+
+  S.currentPlace = displayName;
+  S.currentLevel = randomLvl;
+  S.currentCong  = congestion;
+
+  applySimulatedCongestion(congestion);
+
+  // ⚠️  Active Users card is intentionally NOT updated here.
+  //     The Firestore onSnapshot in dashboard.html handles it.
 }
 
 /* ══════════════════════════════════════════════
@@ -600,9 +637,13 @@ document.getElementById('themeBtn').addEventListener('click', () => setTheme(S.t
    NAV
 ══════════════════════════════════════════════ */
 function goCityRoom() {
-  gsap.to('#panel', { opacity: 0, y: 14, duration: .3, ease: 'power2.in', onComplete: () => location.href = 'enter-traffic.html' });
+  gsap.to('#panel', { opacity: 0, y: 14, duration: .3, ease: 'power2.in',
+    onComplete: () => location.href = 'enter-traffic.html' });
 }
-document.getElementById('burger').addEventListener('click', () => document.getElementById('mob').classList.toggle('open'));
+window.goCityRoom = goCityRoom;
+document.getElementById('burger').addEventListener('click', () =>
+  document.getElementById('mob').classList.toggle('open')
+);
 
 /* ══════════════════════════════════════════════
    BOOT
@@ -619,7 +660,7 @@ window.addEventListener('DOMContentLoaded', () => {
         dismissOverlay();
         navigator.geolocation.getCurrentPosition(
           pos => onGPSSuccess(pos.coords.latitude, pos.coords.longitude),
-          () => loadSavedOrDefault(),
+          ()  => loadSavedOrDefault(),
           { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
       } else { loadSavedOrDefault(); }

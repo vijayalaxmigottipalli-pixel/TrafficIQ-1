@@ -1,117 +1,92 @@
 /* TrafficIQ — trusted-users.js (Legends Leaderboard) */
 'use strict';
 
-/* ══ THREE.JS HIGHWAY BACKGROUND — identical to enter-traffic ══ */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore,
+  collection,
+  getDocs,
+  onSnapshot,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAKGbbt_ARGWep8ggPuk_iE6R1xALkmJM8",
+  authDomain: "trafficiq-3ef14.firebaseapp.com",
+  projectId: "trafficiq-3ef14",
+  storageBucket: "trafficiq-3ef14.firebasestorage.app",
+  messagingSenderId: "97313655693",
+  appId: "1:97313655693:web:fee4304d7815bdceaf0bc4",
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+/* ══ THREE.JS HIGHWAY BACKGROUND ══ */
 (function initBG() {
   const canvas = document.getElementById('bg');
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   renderer.setSize(innerWidth, innerHeight);
-
   const scene  = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-
   const mat = new THREE.ShaderMaterial({
     transparent: true,
     uniforms: { uTime: { value: 0 }, uDark: { value: 1 } },
-    vertexShader: `
-      varying vec2 vUv;
-      void main() { vUv = uv; gl_Position = vec4(position, 1.0); }
-    `,
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position,1.0); }`,
     fragmentShader: `
-      uniform float uTime;
-      uniform float uDark;
-      varying vec2 vUv;
-
-      float grid(vec2 uv, float spacing, float thickness) {
-        vec2 g = abs(fract(uv / spacing - .5) - .5) / fwidth(uv / spacing);
-        return 1.0 - min(min(g.x, g.y), 1.0) * thickness;
+      uniform float uTime; uniform float uDark; varying vec2 vUv;
+      float grid(vec2 uv,float s,float t){vec2 g=abs(fract(uv/s-.5)-.5)/fwidth(uv/s);return 1.0-min(min(g.x,g.y),1.0)*t;}
+      float road(float c,float p,float w){return smoothstep(w,w*.4,abs(c-p));}
+      float streak(vec2 uv,float ry,float off,float spd,float len){
+        float x=fract(uv.x*.6+uTime*spd+off);
+        return smoothstep(len,0.0,x)*smoothstep(0.0,0.01,x)*road(uv.y,ry,0.006);
       }
-      float road(float coord, float pos, float w) {
-        return smoothstep(w, w * .4, abs(coord - pos));
-      }
-      float streak(vec2 uv, float roadY, float offset, float speed, float len) {
-        float x = fract(uv.x * .6 + uTime * speed + offset);
-        float onRoad = road(uv.y, roadY, 0.006);
-        float trail = smoothstep(len, 0.0, x) * smoothstep(0.0, 0.01, x);
-        return trail * onRoad;
-      }
-
-      void main() {
-        vec2 uv = vUv;
-        vec3 darkBg  = vec3(0.016, 0.031, 0.082);
-        vec3 lightBg = vec3(0.906, 0.937, 0.980);
-        vec3 bg = mix(lightBg, darkBg, uDark);
-
-        float g = grid(uv * vec2(6.0, 4.0), 1.0, 1.8);
-        vec3 gridClr = mix(vec3(0.85, 0.88, 0.92), vec3(0.06, 0.12, 0.22), uDark);
-        vec3 col = mix(bg, gridClr, g * mix(0.25, 0.12, uDark));
-
-        float r1 = road(uv.y, 0.25, 0.018);
-        float r2 = road(uv.y, 0.50, 0.022);
-        float r3 = road(uv.y, 0.75, 0.018);
-        float rv1 = road(uv.x, 0.33, 0.016);
-        float rv2 = road(uv.x, 0.66, 0.016);
-
-        vec3 roadClr = mix(vec3(0.78, 0.82, 0.88), vec3(0.08, 0.14, 0.28), uDark);
-        float roads = max(max(r1, r2), max(r3, max(rv1, rv2)));
-        col = mix(col, roadClr, roads);
-
-        float hy1 = road(uv.y, 0.50, 0.002);
-        col = mix(col, vec3(1.0, 0.85, 0.15), hy1 * .55 * uDark);
-
-        float s1 = streak(uv,  0.498, 0.0,  0.18, 0.08);
-        float s2 = streak(uv,  0.502, 0.3,  0.14, 0.06);
-        vec2 flip = vec2(1.0 - uv.x, uv.y);
-        float s3 = streak(flip, 0.495, 0.1,  0.22, 0.07);
-        float s4 = streak(flip, 0.505, 0.6,  0.17, 0.05);
-        float s5 = streak(uv,  0.252, 0.2,  0.13, 0.06);
-        float s6 = streak(uv,  0.748, 0.5,  0.16, 0.07);
-        float s7 = streak(flip, 0.748, 0.4,  0.19, 0.06);
-
-        col += vec3(0.9, 0.15, 0.1)  * (s1+s2) * uDark;
-        col += vec3(0.85,0.90,1.0)   * (s3+s4) * uDark;
-        col += vec3(1.0, 0.80, 0.2)  * (s5+s6+s7) * uDark;
-        col += vec3(0.15,0.35,0.9)   * (s1+s2+s3+s4+s5+s6+s7) * (1.0-uDark) * .25;
-
-        float ix1 = smoothstep(.04, .0, length(uv - vec2(.33,.50)));
-        float ix2 = smoothstep(.04, .0, length(uv - vec2(.66,.50)));
-        float ix3 = smoothstep(.035,.0, length(uv - vec2(.33,.25)));
-        float ix4 = smoothstep(.035,.0, length(uv - vec2(.66,.75)));
-        float ixAll = max(max(ix1,ix2),max(ix3,ix4));
-        col += vec3(0.0,0.75,1.0) * ixAll * 0.18 * uDark;
-        col += vec3(0.1,0.4, 0.9) * ixAll * 0.10 * (1.0-uDark);
-
-        float v = length(uv - .5) * 1.2;
-        col *= 1.0 - v*v * mix(.2,.5,uDark);
-
-        gl_FragColor = vec4(col, mix(.22,.72,uDark));
-      }
-    `,
+      void main(){
+        vec2 uv=vUv;
+        vec3 bg=mix(vec3(0.906,0.937,0.980),vec3(0.016,0.031,0.082),uDark);
+        float g=grid(uv*vec2(6.0,4.0),1.0,1.8);
+        vec3 col=mix(bg,mix(vec3(0.85,0.88,0.92),vec3(0.06,0.12,0.22),uDark),g*mix(0.25,0.12,uDark));
+        float roads=max(max(road(uv.y,.25,.018),road(uv.y,.50,.022)),max(road(uv.y,.75,.018),max(road(uv.x,.33,.016),road(uv.x,.66,.016))));
+        col=mix(col,mix(vec3(0.78,0.82,0.88),vec3(0.08,0.14,0.28),uDark),roads);
+        col=mix(col,vec3(1.0,0.85,0.15),road(uv.y,.50,.002)*.55*uDark);
+        vec2 fl=vec2(1.0-uv.x,uv.y);
+        col+=vec3(0.9,0.15,0.1)*(streak(uv,.498,0.,.18,.08)+streak(uv,.502,.3,.14,.06))*uDark;
+        col+=vec3(0.85,0.90,1.0)*(streak(fl,.495,.1,.22,.07)+streak(fl,.505,.6,.17,.05))*uDark;
+        float v=length(uv-.5)*1.2; col*=1.0-v*v*mix(.2,.5,uDark);
+        gl_FragColor=vec4(col,mix(.22,.72,uDark));
+      }`,
   });
-
-  const geo = new THREE.PlaneGeometry(2, 2);
-  scene.add(new THREE.Mesh(geo, mat));
-
+  scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat));
   let t = 0;
-  (function tick() {
-    requestAnimationFrame(tick);
-    t += 0.008;
-    mat.uniforms.uTime.value = t;
-    renderer.render(scene, camera);
-  })();
-
+  (function tick(){ requestAnimationFrame(tick); t+=0.008; mat.uniforms.uTime.value=t; renderer.render(scene,camera); })();
   addEventListener('resize', () => renderer.setSize(innerWidth, innerHeight));
   window._bgMat = mat;
 })();
 
 /* ══ STATE ══ */
 const S = {
-  theme: localStorage.getItem('tiq-theme') || 'dark',
-  coins: 142,
-  reports: 38,
-  reportsForNext: 2,
-  rank: 14,
+  theme:       localStorage.getItem('tiq-theme') || 'dark',
+  myName:      localStorage.getItem('tiq-name')  || '',
+  coins:       0,
+  initialised: false,
+};
+
+/* ══ REWARD RANGES ══ */
+const REWARD_RANGES = {
+  recharge20:    100,
+  voucher50:     250,
+  verifiedBadge: 350,
+  legendStatus:  1000,
+};
+
+/* ══ BADGE RANGES ══ */
+const BADGE_RANGES = {
+  newcomer: 1200,
+  pro:      1400,
+  onfire:   1600,
+  elite:    1700,
+  verified: 1800,
+  legend:   2000,
 };
 
 /* ══ THEME ══ */
@@ -126,181 +101,193 @@ document.getElementById('themeBtn').addEventListener('click', () =>
   setTheme(S.theme === 'dark' ? 'light' : 'dark')
 );
 
-/* ══ LEADERBOARD DATA ══ */
-const USERS = [
-  { name:'Deepa K.',  init:'DK', role:'g', score:98, coins:1240, badge:'Legend',    move:+2, badges:['🏆 Legend','🔥 Streak','✓ Verified'] },
-  { name:'Ravi K.',   init:'RK', role:'g', score:97, coins:1105, badge:'Legend',    move: 0, badges:['🏆 Legend','✓ Verified'] },
-  { name:'Raj V.',    init:'RV', role:'g', score:95, coins: 980, badge:'Elite',     move:+1, badges:['💎 Elite','🔥 Streak'] },
-  { name:'Lata P.',   init:'LP', role:'g', score:93, coins: 855, badge:'Elite',     move:-1, badges:['💎 Elite','✓ Verified'] },
-  { name:'Ankit S.',  init:'AS', role:'g', score:91, coins: 780, badge:'Pro',       move:+3, badges:['⭐ Pro','🔥 Streak'] },
-  { name:'Irfan M.',  init:'IM', role:'g', score:89, coins: 702, badge:'Pro',       move: 0, badges:['⭐ Pro'] },
-  { name:'Mohan D.',  init:'MD', role:'g', score:88, coins: 650, badge:'Pro',       move:-1, badges:['⭐ Pro','✓ Verified'] },
-  { name:'Priya M.',  init:'PM', role:'b', score:82, coins: 510, badge:'Active',    move:+1, badges:['👤 Active'] },
-  { name:'Neha R.',   init:'NR', role:'b', score:76, coins: 390, badge:'Active',    move: 0, badges:['👤 Active'] },
-  { name:'Sahi R.',   init:'SR', role:'b', score:72, coins: 310, badge:'Active',    move:+2, badges:['👤 Active'] },
-];
+/* ══ HELPERS ══ */
+function initials(name) {
+  if (!name) return '??';
+  const p = name.trim().split(' ');
+  return p.length >= 2 ? (p[0][0] + p[1][0]).toUpperCase() : name.substring(0, 2).toUpperCase();
+}
+function roleColor(coins) {
+  return coins >= 500 ? 'g' : 'b';
+}
 
-/* ══ REWARDS DATA ══ */
-const REWARDS = [
-  {
-    ico:'📱', name:'₹20 Recharge',
-    req:'200 Coins', detail:'58 more coins needed',
-    progress: 71, fill:'linear-gradient(90deg,#00cfff,#7b61ff)',
-    status:'close', statusTxt:'Almost there!',
-    coinCost: 200,
-  },
-  {
-    ico:'🎫', name:'₹50 Voucher',
-    req:'500 Coins', detail:'358 more coins needed',
-    progress: 28, fill:'linear-gradient(90deg,#f59e0b,#ef4444)',
-    status:'locked', statusTxt:'🔒 Locked',
-    coinCost: 500,
-  },
-  {
-    ico:'🛡️', name:'Verified Badge',
-    req:'2 More Reports',  detail:'2 verified reports needed',
-    progress: 95, fill:'linear-gradient(90deg,#22c55e,#00cfff)',
-    status:'close', statusTxt:'2 reports away!',
-    coinCost: 0,
-  },
-  {
-    ico:'🏆', name:'Legend Status',
-    req:'Score 95+', detail:'Need 17 more trust points',
-    progress: 82, fill:'linear-gradient(90deg,#f59e0b,#a78bfa)',
-    status:'locked', statusTxt:'🔒 Locked',
-    coinCost: 0,
-  },
-];
+/* ══ COIN FLOAT ANIMATION ══ */
+function spawnCoinFloat(el, text) {
+  const rect = el.getBoundingClientRect();
+  const div  = document.createElement('div');
+  div.className   = 'coin-float';
+  div.textContent = text || '🪙';
+  div.style.left  = (rect.left + rect.width / 2) + 'px';
+  div.style.top   = (rect.top - 10) + 'px';
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), 1000);
+}
 
-/* ══ EARN ACTIONS ══ */
-const EARN = [
-  { ico:'✅', name:'Verified Report', desc:'Submit accurate traffic info',            coins:'+10' },
-  { ico:'💬', name:'Comment Upvoted', desc:'Your comment got 5+ upvotes',             coins:'+5'  },
-  { ico:'🔥', name:'Daily Streak',    desc:'Report every day for 7 days',             coins:'+25' },
-  { ico:'📍', name:'First Reporter',  desc:'First to report a new incident',          coins:'+15' },
-  { ico:'👑', name:'Top Reporter',    desc:'#1 reporter in your city this week',      coins:'+50' },
-  { ico:'🤝', name:'Referral Bonus',  desc:'Friend joins via your link',              coins:'+20' },
-];
+/* ══ DISMISS LOADING OVERLAY ══
+   Called once after first render is fully painted.
+   Uses requestAnimationFrame to ensure DOM is painted before hiding.
+*/
+function dismissOverlay() {
+  const overlay = document.getElementById('loadingOverlay');
+  const layout  = document.getElementById('mainLayout');
+  const topbar  = document.getElementById('topbar');
 
-/* ══ BADGES ══ */
-const BADGES = [
-  { ico:'🔰', name:'Newcomer',    sub:'0–10 reports',     earned:true,  prog:100, color:'#94a3b8' },
-  { ico:'⭐', name:'Pro',         sub:'50+ reports',      earned:true,  prog:100, color:'#00cfff' },
-  { ico:'💎', name:'Elite',       sub:'100+ reports',     earned:false, prog:76,  color:'#a78bfa' },
-  { ico:'🏆', name:'Legend',      sub:'Score 95+',        earned:false, prog:42,  color:'#f59e0b' },
-  { ico:'🔥', name:'On Fire',     sub:'7-day streak',     earned:true,  prog:100, color:'#ff8c42' },
-  { ico:'🛡️', name:'Verified',    sub:'Trusted reporter', earned:false, prog:95,  color:'#22c55e' },
-];
+  // Wait two animation frames so the rendered DOM is actually painted
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      // Reveal real UI
+      layout.classList.add('visible');
+      topbar.classList.add('visible');
+
+      // Fade out overlay
+      overlay.classList.add('hidden');
+
+      // Remove overlay from DOM after transition completes
+      setTimeout(() => {
+        overlay.remove();
+      }, 600);
+    });
+  });
+}
 
 /* ══ BUILD PODIUM ══ */
-function buildPodium() {
+function buildPodium(users) {
   const podium = document.getElementById('podium');
-  const top3 = USERS.slice(0, 3);
-  const order = [1, 0, 2]; // 2nd, 1st, 3rd
-
-  order.forEach(i => {
+  podium.innerHTML = '';
+  const top3 = users.slice(0, 3);
+  if (!top3.length) {
+    podium.innerHTML = `<div style="color:var(--sub);font-size:.75rem;text-align:center;padding:30px 0;width:100%">No data yet — be the first Legend! 🏆</div>`;
+    return;
+  }
+  [1, 0, 2].forEach(i => {
     const u = top3[i];
-    const rank = i + 1;
-    const slot = document.createElement('div');
-    slot.className = `podium-slot ${['first','second','third'][i]}`;
-
-    const rankClass = `rank-${rank}`;
-    const crown = rank === 1 ? '<span class="pod-crown">👑</span>' : '';
-    const heights = ['52px','36px','24px'];
-
-    slot.innerHTML = `
+    if (!u) return;
+    const rank      = i + 1;
+    const slotClass = ['first','second','third'][i];
+    const crown     = rank === 1 ? '<span class="pod-crown">👑</span>' : '';
+    const slot      = document.createElement('div');
+    slot.className  = `podium-slot ${slotClass}`;
+    slot.innerHTML  = `
       <div class="pod-av-wrap">
         ${crown}
         <div class="pod-av ${u.role}" title="${u.name}">${u.init}</div>
-        <div class="pod-rank-badge ${rankClass}">${rank}</div>
+        <div class="pod-rank-badge rank-${rank}">${rank}</div>
       </div>
       <div class="pod-name">${u.name.split(' ')[0]}</div>
-      <div class="pod-score">${u.score}/100</div>
+      <div class="pod-score">${u.coins} coins</div>
       <div class="pod-coins">🪙 ${u.coins.toLocaleString()}</div>
       <div class="pod-platform">#${rank}</div>`;
     podium.appendChild(slot);
   });
 }
 
-/* ══ BUILD RANK LIST (4–10) ══ */
-function buildRankList() {
+/* ══ BUILD RANK LIST (4+) ══ */
+function buildRankList(users) {
   const list = document.getElementById('rankList');
-  USERS.slice(3).forEach((u, i) => {
+  list.innerHTML = '';
+  if (users.length <= 3) {
+    list.innerHTML = `<div style="color:var(--sub);font-size:.72rem;text-align:center;padding:16px 0">Only top 3 so far!</div>`;
+    return;
+  }
+  users.slice(3).forEach((u, i) => {
     const rank = i + 4;
-    const moveIcon = u.move > 0
-      ? `<span class="rr-move up">▲${u.move}</span>`
-      : u.move < 0
-        ? `<span class="rr-move down">▼${Math.abs(u.move)}</span>`
-        : `<span class="rr-move same">—</span>`;
-
-    const badgeChips = u.badges.slice(0, 2).map(b => {
-      const colorMap = { '🏆':' bc-gold','💎':' bc-purple','⭐':' bc-cyan','🔥':' bc-gold','✓':' bc-green','👤':' bc-cyan' };
-      const cls = Object.entries(colorMap).find(([k]) => b.includes(k))?.[1] || ' bc-cyan';
-      return `<span class="badge-chip${cls}">${b}</span>`;
-    }).join('');
-
-    const row = document.createElement('div');
+    const row  = document.createElement('div');
     row.className = 'rank-row';
     row.innerHTML = `
       <span class="rr-num">${rank}</span>
       <div class="rr-av ${u.role}">${u.init}</div>
       <div class="rr-info">
         <div class="rr-name">${u.name}</div>
-        <div class="rr-badges">${badgeChips}</div>
+        <div class="rr-badges"><span class="badge-chip bc-cyan">🪙 ${u.coins} coins</span></div>
       </div>
       <div class="rr-right">
-        <span class="rr-score">${u.score}</span>
-        <span class="rr-coins">🪙 ${u.coins}</span>
-        ${moveIcon}
+        <span class="rr-score">${u.coins}</span>
+        <span class="rr-coins">👍 ${u.likeCount} likes</span>
+        <span class="rr-move same">—</span>
       </div>`;
-    row.addEventListener('click', () => spawnCoinFloat(row, ''));
+    row.addEventListener('click', () => spawnCoinFloat(row, `🪙 ${u.coins}`));
     list.appendChild(row);
   });
 }
 
 /* ══ MY RANK ══ */
-function buildMyRank() {
+function buildMyRank(users) {
   const card = document.getElementById('myRankCard');
+  const idx  = S.myName ? users.findIndex(u => u.name === S.myName) : -1;
+  const rank = idx >= 0 ? idx + 1 : '—';
+  const me   = idx >= 0 ? users[idx] : null;
+  S.coins    = me ? me.coins : 0;
+
   card.innerHTML = `
-    <span class="rr-num" style="color:var(--c);font-size:.85rem">${S.rank}</span>
-    <div class="rr-av b">YO</div>
+    <span class="rr-num" style="color:var(--c);font-size:.85rem">${rank}</span>
+    <div class="rr-av b">${initials(S.myName || 'You')}</div>
     <div class="rr-info">
-      <div class="rr-name">You</div>
+      <div class="rr-name">${S.myName || 'You'}</div>
       <div class="rr-badges"><span class="badge-chip bc-cyan">👤 Active</span></div>
     </div>
     <div class="rr-right">
-      <span class="rr-score" style="font-size:.85rem">75</span>
-      <span class="rr-coins">🪙 ${S.coins}</span>
-      <span class="rr-move up">▲3</span>
+      <span class="rr-score" style="font-size:.85rem">${S.coins}</span>
+      <span class="rr-coins">🪙 ${S.coins.toLocaleString()}</span>
     </div>`;
 }
 
+/* ══ BUILD WALLET ══ */
+function buildWallet(coins) {
+  const thresholds = [100, 250, 350, 1000];
+  const next = thresholds.find(t => coins < t) || thresholds[thresholds.length - 1];
+  const pct  = Math.min(100, Math.round((coins / next) * 100));
+
+  document.getElementById('walletCoins').textContent = coins.toLocaleString();
+  document.getElementById('walletPct').textContent   = pct + '%';
+  setTimeout(() => {
+    const fill = document.getElementById('walletFill');
+    if (fill) fill.style.width = pct + '%';
+  }, 400);
+
+  const meta = document.querySelector('.wallet-meta');
+  if (meta) meta.innerHTML = `${coins.toLocaleString()} / ${next} coins · <strong>${Math.max(0, next - coins)} more to go</strong>`;
+}
+
 /* ══ BUILD REWARDS ══ */
-function buildRewards() {
+function buildRewards(userCoins) {
   const grid = document.getElementById('rewardsGrid');
-  REWARDS.forEach(r => {
+  grid.innerHTML = '';
+
+  const REWARD_DEFS = [
+    { key:'recharge20',    ico:'📱', displayName:'₹20 Recharge',   fill:'linear-gradient(90deg,#00cfff,#7b61ff)' },
+    { key:'voucher50',     ico:'🎫', displayName:'₹50 Voucher',    fill:'linear-gradient(90deg,#f59e0b,#ef4444)' },
+    { key:'verifiedBadge', ico:'🛡️', displayName:'Verified Badge', fill:'linear-gradient(90deg,#22c55e,#00cfff)' },
+    { key:'legendStatus',  ico:'🏆', displayName:'Legend Status',  fill:'linear-gradient(90deg,#f59e0b,#a78bfa)' },
+  ];
+
+  REWARD_DEFS.forEach(def => {
+    const required    = REWARD_RANGES[def.key];
+    const progress    = Math.min(100, Math.round((userCoins / required) * 100));
+    const unlocked    = userCoins >= required;
+    const close       = !unlocked && progress >= 70;
+    const detailLabel = unlocked ? 'Unlocked! 🎉' : `${Math.max(0, required - userCoins)} coins needed`;
+    const statusTxt   = unlocked ? '✓ Unlocked' : close ? '⚡ Almost There' : '🔒 Locked';
+    const statusCls   = unlocked ? 'unlocked'   : close ? 'close'          : 'locked';
+
     const card = document.createElement('div');
-    card.className = `reward-card ${r.status === 'unlocked' ? 'unlocked' : r.status === 'close' ? '' : 'locked'}`;
-
-    const fillColor = r.fill || 'linear-gradient(90deg,var(--c),#7b61ff)';
-    const statusClass = r.status === 'unlocked' ? 'unlocked' : r.status === 'close' ? 'close' : 'locked';
-    const statusDot = r.status === 'close' ? '⚡' : r.status === 'unlocked' ? '✓' : '🔒';
-
+    card.className = `reward-card ${unlocked ? 'unlocked' : close ? '' : 'locked'}`;
     card.innerHTML = `
-      <div class="rw-ico">${r.ico}</div>
-      <div class="rw-name">${r.name}</div>
+      <div class="rw-ico">${def.ico}</div>
+      <div class="rw-name">${def.displayName}</div>
       <div class="rw-req">
-        <strong>${r.req}</strong><br>
-        <span class="rr-need">${r.detail}</span>
+        <strong>${required} Coins</strong><br>
+        <span class="rr-need">${detailLabel}</span>
       </div>
       <div class="rw-progress-wrap">
-        <div class="rw-bar"><div class="rw-fill" style="width:0%;background:${fillColor}" data-target="${r.progress}"></div></div>
-        <div class="rw-pct">${r.progress}%</div>
+        <div class="rw-bar">
+          <div class="rw-fill" style="width:0%;background:${def.fill}" data-target="${progress}"></div>
+        </div>
+        <div class="rw-pct">${progress}%</div>
       </div>
-      <span class="rw-status ${statusClass}">${statusDot} ${r.statusTxt}</span>`;
-
+      <span class="rw-status ${statusCls}">${statusTxt}</span>`;
     card.addEventListener('click', () => {
-      if (r.status !== 'locked') spawnCoinFloat(card, r.status === 'close' ? '⚡ Almost!' : '✅ Unlocked!');
+      if (!card.classList.contains('locked'))
+        spawnCoinFloat(card, unlocked ? '✅ Unlocked!' : '⚡ Almost!');
     });
     grid.appendChild(card);
   });
@@ -309,161 +296,168 @@ function buildRewards() {
 /* ══ BUILD EARN LIST ══ */
 function buildEarnList() {
   const list = document.getElementById('earnList');
-  EARN.forEach(e => {
-    const row = document.createElement('div');
-    row.className = 'earn-row';
-    row.innerHTML = `
-      <div class="earn-ico">${e.ico}</div>
-      <div class="earn-info">
-        <div class="earn-name">${e.name}</div>
-        <div class="earn-desc">${e.desc}</div>
-      </div>
-      <div class="earn-coins">🪙 ${e.coins}</div>`;
-    row.addEventListener('click', () => spawnCoinFloat(row, e.coins));
-    list.appendChild(row);
-  });
+  list.innerHTML = '';
+  const row = document.createElement('div');
+  row.className = 'earn-row';
+  row.innerHTML = `
+    <div class="earn-ico">💬</div>
+    <div class="earn-info">
+      <div class="earn-name">Message Liked</div>
+      <div class="earn-desc">Someone likes your traffic report — earn 5 coins per like</div>
+    </div>
+    <div class="earn-coins">🪙 +5</div>`;
+  row.addEventListener('click', () => spawnCoinFloat(row, '+5'));
+  list.appendChild(row);
 }
 
 /* ══ BUILD BADGE GRID ══ */
-function buildBadges() {
+function buildBadges(userCoins) {
   const grid = document.getElementById('badgeGrid');
-  BADGES.forEach(b => {
+  grid.innerHTML = '';
+
+  const BADGE_DEFS = [
+    { key:'newcomer', ico:'🔰', name:'Newcomer',  color:'#94a3b8' },
+    { key:'pro',      ico:'⭐', name:'Pro',       color:'#00cfff' },
+    { key:'onfire',   ico:'🔥', name:'On Fire',   color:'#ff8c42' },
+    { key:'elite',    ico:'💎', name:'Elite',     color:'#a78bfa' },
+    { key:'verified', ico:'🛡️', name:'Verified',  color:'#22c55e' },
+    { key:'legend',   ico:'🏆', name:'Legend',    color:'#f59e0b' },
+  ];
+
+  BADGE_DEFS.forEach(b => {
+    const required  = BADGE_RANGES[b.key];
+    const progress  = Math.min(100, Math.round((userCoins / required) * 100));
+    const earned    = userCoins >= required;
+    const remaining = Math.max(0, required - userCoins);
+
+    const iconStyle = earned ? '' : 'filter:grayscale(1) brightness(0.4) contrast(0.6);opacity:0.45;';
+    const fillColor = earned ? b.color : '#334155';
+    const subTxt    = earned ? `${required} coins — Earned! 🎉` : `${remaining} more coins to unlock`;
+
     const card = document.createElement('div');
-    card.className = `badge-card ${b.earned ? 'earned' : 'locked-b'}`;
+    card.className = `badge-card ${earned ? 'earned' : 'locked-b'}`;
     card.innerHTML = `
-      <div class="badge-ico">${b.ico}</div>
+      <div class="badge-ico" style="${iconStyle}">${b.ico}</div>
       <div class="badge-name">${b.name}</div>
-      <div class="badge-sub">${b.sub}</div>
+      <div class="badge-sub">${subTxt}</div>
       <div class="badge-prog">
-        <div class="badge-prog-fill" style="width:0%;background:${b.color}" data-target="${b.prog}"></div>
+        <div class="badge-prog-fill" style="width:0%;background:${fillColor}" data-target="${progress}"></div>
       </div>`;
-    if (b.earned) card.addEventListener('click', () => spawnCoinFloat(card, '🎖 Earned!'));
+    if (earned) card.addEventListener('click', () => spawnCoinFloat(card, '🎖 Earned!'));
     grid.appendChild(card);
   });
-}
-
-/* ══ COIN FLOAT ANIMATION ══ */
-function spawnCoinFloat(el, text) {
-  const rect = el.getBoundingClientRect();
-  const div = document.createElement('div');
-  div.className = 'coin-float';
-  div.textContent = text || '🪙 +5';
-  div.style.left = (rect.left + rect.width / 2) + 'px';
-  div.style.top  = (rect.top - 10) + 'px';
-  document.body.appendChild(div);
-  setTimeout(() => div.remove(), 1000);
-}
-
-/* ══ ANIMATE WALLET BAR ══ */
-function animateWalletBar() {
-  const pct = Math.round(S.coins / 200 * 100);
-  setTimeout(() => {
-    document.getElementById('walletFill').style.width = pct + '%';
-  }, 600);
 }
 
 /* ══ ANIMATE ALL PROGRESS BARS ══ */
 function animateBars() {
   document.querySelectorAll('[data-target]').forEach(el => {
-    const target = parseInt(el.dataset.target);
-    setTimeout(() => { el.style.width = target + '%'; }, 700 + Math.random() * 300);
+    const target = parseInt(el.dataset.target) || 0;
+    setTimeout(() => { el.style.width = target + '%'; }, 600 + Math.random() * 300);
   });
 }
 
-/* ══ LIVE RANK TICKER ══ */
+/* ══ RANK TICKER ══ */
 function startRankTicker() {
   setInterval(() => {
     const rows = document.querySelectorAll('.rank-row');
     if (!rows.length) return;
-    const idx = Math.floor(Math.random() * rows.length);
-    const row = rows[idx];
-    gsap.fromTo(row,
-      { backgroundColor: 'rgba(0,207,255,0.08)' },
-      { backgroundColor: 'transparent', duration: 1.2, ease: 'power2.out' }
-    );
-    const scoreEl = row.querySelector('.rr-score');
-    if (scoreEl) {
-      const cur = parseInt(scoreEl.textContent);
-      const delta = Math.random() < 0.6 ? 1 : -1;
-      const next = Math.min(99, Math.max(50, cur + delta));
-      scoreEl.textContent = next;
-      gsap.fromTo(scoreEl,
-        { color: delta > 0 ? 'var(--cg)' : 'var(--cr)' },
-        { color: 'var(--c)', duration: .8, ease: 'power2.out' }
+    const row = rows[Math.floor(Math.random() * rows.length)];
+    if (window.gsap) {
+      gsap.fromTo(row,
+        { backgroundColor: 'rgba(0,207,255,0.08)' },
+        { backgroundColor: 'transparent', duration: 1.2, ease: 'power2.out' }
       );
     }
-  }, 4000 + Math.random() * 2000);
+  }, 5000);
 }
 
-/* ══ LIVE COIN COUNTER ══ */
+/* ══ COIN PULSE ══ */
 function startCoinPulse() {
   setInterval(() => {
-    const delta = Math.floor(Math.random() * 3) + 1;
-    S.coins = Math.min(200, S.coins + delta);
     const el = document.getElementById('walletCoins');
-    if (el) {
-      el.textContent = S.coins;
+    if (el && S.coins > 0 && window.gsap) {
       gsap.fromTo(el,
         { scale: 1.15, color: '#fbbf24' },
         { scale: 1, color: 'var(--cgold)', duration: .4, ease: 'back.out(2)' }
       );
-      /* update bar */
-      const pct = Math.round(S.coins / 200 * 100);
-      document.getElementById('walletFill').style.width = pct + '%';
-      document.getElementById('walletPct').textContent = pct + '%';
     }
-  }, 7000);
+  }, 8000);
 }
 
-/* ══ GSAP ENTRANCE ══ */
-window.addEventListener('DOMContentLoaded', () => {
-  /* Build everything */
-  buildPodium();
-  buildRankList();
-  buildMyRank();
-  buildRewards();
+/* ══ ENTRANCE ANIMATIONS (after overlay dismissed) ══ */
+function playEntrance() {
+  if (!window.gsap) return;
+  gsap.from('.podium-slot', { y: 30, opacity: 0, stagger: .12, duration: .55, ease: 'back.out(1.4)', delay: .05 });
+  gsap.from('.rank-row',    { x: -20, opacity: 0, stagger: .07, duration: .4,  ease: 'power2.out',   delay: .1  });
+  gsap.from('.reward-card', { y: 14, opacity: 0, stagger: .08, duration: .4,   ease: 'power2.out',   delay: .15 });
+  gsap.from('.badge-card',  { scale: .88, opacity: 0, stagger: .06, duration: .35, ease: 'back.out(1.5)', delay: .2 });
+  gsap.from('.wallet-card', { y: 14, opacity: 0, duration: .45, ease: 'power2.out', delay: .05 });
+}
+
+/* ══ CORE RENDER ══ */
+async function render() {
+  let likesSnap;
+  try {
+    likesSnap = await getDocs(collection(db, 'message_likes'));
+  } catch(e) {
+    console.error('message_likes fetch failed', e);
+    // Even on error, dismiss overlay so page isn't stuck
+    if (!S.initialised) {
+      S.initialised = true;
+      dismissOverlay();
+    }
+    return;
+  }
+
+  /* Build user list */
+  const userList = [];
+  likesSnap.forEach(d => {
+    const data      = d.data();
+    const name      = (data.authorName && data.authorName.trim()) ? data.authorName.trim() : d.id;
+    const likeCount = typeof data.likeCount === 'number' ? data.likeCount : 0;
+    if (likeCount <= 0) return;
+    userList.push({
+      name,
+      likeCount,
+      coins: likeCount * 5,
+      role:  roleColor(likeCount * 5),
+      init:  initials(name),
+    });
+  });
+
+  userList.sort((a, b) => b.coins - a.coins);
+
+  /* Topbar stats */
+  document.getElementById('tbUsers').textContent = userList.length;
+  const me = userList.find(u => u.name === S.myName);
+  document.getElementById('tbCoins').textContent = (me ? me.coins : 0).toLocaleString();
+
+  /* Build all sections */
+  buildPodium(userList);
+  buildRankList(userList);
+  buildMyRank(userList);
+  buildWallet(S.coins);
+  buildRewards(S.coins);
   buildEarnList();
-  buildBadges();
+  buildBadges(S.coins);
+  animateBars();
 
-  /* Animate in */
-  gsap.to('#topbar', { y: 0, opacity: 1, duration: .6, ease: 'power3.out', delay: .1 });
-  gsap.to('#panel',  { x: 0, opacity: 1, duration: .75, ease: 'power3.out', delay: .2 });
-  gsap.from('.rewards-panel', { opacity: 0, duration: .5, ease: 'power2.out', delay: .3 });
+  /* First render: dismiss overlay, then animate entrance */
+  if (!S.initialised) {
+    S.initialised = true;
+    dismissOverlay();
+    // Play entrance animations after overlay fade completes
+    setTimeout(() => playEntrance(), 550);
+  }
+}
 
-  /* Podium slots */
-  gsap.from('.podium-slot', {
-    y: 30, opacity: 0, stagger: .12, duration: .55,
-    ease: 'back.out(1.4)', delay: .4
-  });
+/* ══ ENTRY POINT ══ */
+window.addEventListener('DOMContentLoaded', async () => {
+  await render();
 
-  /* Rank rows */
-  gsap.from('.rank-row', {
-    x: -20, opacity: 0, stagger: .07, duration: .4,
-    ease: 'power2.out', delay: .55
-  });
+  /* Live updates — silent re-render, no overlay */
+  onSnapshot(collection(db, 'message_likes'), () => { render(); });
 
-  /* Wallet */
-  gsap.from('.wallet-card', {
-    y: 16, opacity: 0, duration: .5, ease: 'power2.out', delay: .45
-  });
-
-  /* Reward cards */
-  gsap.from('.reward-card', {
-    y: 14, opacity: 0, stagger: .08, duration: .4,
-    ease: 'power2.out', delay: .6
-  });
-
-  /* Badge cards */
-  gsap.from('.badge-card', {
-    scale: .88, opacity: 0, stagger: .06, duration: .35,
-    ease: 'back.out(1.5)', delay: .75
-  });
-
-  /* Progress bars */
-  setTimeout(animateBars, 500);
-  animateWalletBar();
-
-  /* Live effects */
   startRankTicker();
   startCoinPulse();
 });
