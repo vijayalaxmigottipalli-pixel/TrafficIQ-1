@@ -146,7 +146,6 @@
             transform: translateY(-50%);
             animation: panRoad 0.9s linear infinite;
         }
-        /* Second road line */
         .markings-2 {
             position: absolute; top: 25%; width: 200%; height: 2px;
             background: rgba(255,255,255,0.06);
@@ -263,7 +262,6 @@
             filter: drop-shadow(0 0 12px rgba(0,229,255,0.8)) drop-shadow(0 0 30px rgba(0,100,255,0.5));
         }
 
-        /* glitch layers */
         .title-word-iq::before,
         .title-word-iq::after {
             content: 'IQ';
@@ -330,8 +328,6 @@
         .hud-tr { top: 20px; right: 20px; text-align: right; }
         .hud-bl { bottom: 20px; left: 20px; }
         .hud-corner .hud-line { display: block; margin: 3px 0; }
-
-        /* Speed lines overlay — removed */
 
         /* KEYFRAMES */
         @keyframes panClouds { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
@@ -491,7 +487,7 @@
                     <path d="M20 85 C20 70,30 60,60 60 L110 38 C140 24,180 24,210 38 L260 60 C290 60,312 70,316 85 L316 95 L280 95 C280 60,210 60,210 95 L110 95 C110 60,40 60,40 95 L20 95 Z" fill="url(#bodyPaint)"/>
 
                     <!-- Neon underline accent -->
-                    <path d="M22 95 L40 95 C40 60,110 60,110 95 L210 95 C210 60,280 60,280 95 L314 95" fill="none" stroke="url(#accent)" stroke-width="2" opacity="0.9" filter="url(#glow)"/>
+                    <path d="M22 95 L40 95 C40 60,110 60,110 95 L210 95 C210 60,280 60,280 95 L314 95" fill="none" stroke="url(#accent)" stroke-width="2" opacity="0.9"/>
 
                     <!-- Windshield -->
                     <path d="M72 60 L118 40 C142 28,178 28,202 40 L242 60 Z" fill="url(#glass)"/>
@@ -540,9 +536,143 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <!-- ✅ Firebase v9.6.1 (consistent version across all scripts) -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-messaging-compat.js"></script>
+
     <script>
+    // ✅ FIXED: Correct appId (was "P1:..." before) and correct authDomain (removed stray "N")
+    const firebaseConfig = {
+        apiKey: "AIzaSyAKGbbt_ARGWep8ggPuk_iE6R1xALkmJM8",
+        authDomain: "trafficiq-3ef14.firebaseapp.com",
+        projectId: "trafficiq-3ef14",
+        storageBucket: "trafficiq-3ef14.firebasestorage.app",
+        messagingSenderId: "97313655693",
+        appId: "1:97313655693:web:fee4304d7815bdceaf0bc4"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const messaging = firebase.messaging();
+
+    // ─── Notification helpers ───────────────────────────────────────────────
+
+    // ✅ Use Service Worker showNotification for reliability (works even when tab is in background)
+    function showNotification(title, body) {
+        if (Notification.permission === "granted") {
+            navigator.serviceWorker.ready.then(registration => {
+                registration.showNotification(title, {
+                    body: body,
+                    icon: "icon.png",
+                    badge: "icon.png",
+                    vibrate: [200, 100, 200]
+                });
+            });
+        }
+    }
+
+    function getDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) *
+            Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    async function checkTraffic(userLat, userLng) {
+        const snapshot = await db.collection("traffic_reports").get();
+        let foundIssue = false;
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const distance = getDistance(userLat, userLng, data.latitude, data.longitude);
+            if (distance <= 2) {
+                foundIssue = true;
+                showNotification(
+                    "Traffic Alert Ahead",
+                    data.issue + " near " + data.location + ". Expected delay " + data.delay + " minutes."
+                );
+            }
+        });
+        if (!foundIssue) askUserReport();
+    }
+
+    function askUserReport() {
+        const report = confirm("Are there any traffic issues here?");
+        if (report) reportTraffic();
+    }
+
+    function reportTraffic() {
+        const issue = prompt("Enter issue: Accident / Road Block / Heavy Traffic");
+        if (!issue) return;
+        navigator.geolocation.getCurrentPosition(async function (position) {
+            await db.collection("traffic_reports").add({
+                location: "User Report",
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                issue: issue,
+                delay: 20
+            });
+            alert("Traffic issue reported. Thank you!");
+        });
+    }
+
+    // ─── Service Worker + Notification permission ──────────────────────────
+
+    // ✅ Register SW first, then request permission, then get location
+    // This order is required: SW must be active before messaging.getToken()
+    async function initNotificationsAndLocation() {
+        // 1. Register service worker
+        if ('serviceWorker' in navigator) {
+            try {
+                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                console.log('Service Worker registered:', registration.scope);
+            } catch (err) {
+                console.error('SW registration failed:', err);
+            }
+        }
+
+        // 2. Request notification permission (must be triggered by user gesture
+        //    in some browsers — here we do it after page load which is fine)
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            console.warn('Notification permission denied');
+            return;
+        }
+
+        // 3. Get FCM token (optional — needed only if you send server-push notifications)
+        try {
+            const token = await messaging.getToken({
+                vapidKey: "YOUR_VAPID_KEY_HERE" // 🔑 Replace with your VAPID key from Firebase console
+            });
+            console.log('FCM Token:', token);
+            // TODO: Save token to Firestore to send targeted push notifications
+        } catch (err) {
+            console.warn('Could not get FCM token:', err.message);
+        }
+
+        // 4. Check for nearby traffic using geolocation
+        navigator.geolocation.getCurrentPosition(
+            position => checkTraffic(position.coords.latitude, position.coords.longitude),
+            err => console.warn('Geolocation denied:', err.message)
+        );
+    }
+
+    // Handle foreground FCM messages
+    messaging.onMessage(payload => {
+        console.log('Foreground message:', payload);
+        const { title, body } = payload.notification;
+        showNotification(title, body);
+    });
+
+    // ─── GSAP Animation ────────────────────────────────────────────────────
+
     document.addEventListener("DOMContentLoaded", () => {
-        // CANVAS SMOKE ENGINE
         const canvas = document.getElementById('smoke-canvas');
         const ctx = canvas.getContext('2d');
         const car = document.getElementById('car');
@@ -595,36 +725,35 @@
         }
         animateParticles();
 
-        // GSAP TIMELINE
         const tl = gsap.timeline();
-
-        // HUD fades in
         tl.to(['.hud-tl', '.hud-tr'], { opacity: 1, duration: 1.2, stagger: 0.3, ease: 'power2.out' }, 0.3)
-        // Car drives in
-        .to(car, { left: "36%", duration: 2.2, ease: "power2.out" }, 0.5)
-        .to({}, { duration: 1.2 })
-        // Speed burst
-        .add(() => {
-            isSpeeding = true;
-            document.getElementById('scene').classList.add('fast-road');
-        })
-        .to(car, { left: "160%", y: -6, rotation: -2.5, duration: 0.75, ease: "power3.in" })
-        // Smoke screen
-        .to("#smoke-screen", { opacity: 1, duration: 0.7, ease: "power2.inOut" }, "-=0.15")
-        // Title reveal
-        .to("#title", { opacity: 1, scale: 1, filter: "blur(0px)", duration: 2.8, ease: "power3.out" })
-        // Divider line
-        .add(() => {
-            document.getElementById('title-divider').classList.add('animate');
-        }, "-=2")
-        // Enter prompt pulse
-        .to("#enter-prompt", {
-            opacity: 1, duration: 0.8, ease: "power2.inOut",
-            yoyo: true, repeat: -1, repeatDelay: 0.4
-        });
+          .to(car, { left: "36%", duration: 2.2, ease: "power2.out" }, 0.5)
+          .to({}, { duration: 1.2 })
+          .add(() => {
+              isSpeeding = true;
+              document.getElementById('scene').classList.add('fast-road');
+          })
+          .to(car, { left: "160%", y: -6, rotation: -2.5, duration: 0.75, ease: "power3.in" })
+          .to("#smoke-screen", { opacity: 1, duration: 0.7, ease: "power2.inOut" }, "-=0.15")
+          .to("#title", { opacity: 1, scale: 1, filter: "blur(0px)", duration: 2.8, ease: "power3.out" })
+          .add(() => { document.getElementById('title-divider').classList.add('animate'); }, "-=2")
+          .to("#enter-prompt", {
+              opacity: 1, duration: 0.8, ease: "power2.inOut",
+              yoyo: true, repeat: -1, repeatDelay: 0.4
+          });
 
-        // Redirect logic
+        // ✅ Init notifications after first user interaction (click or Enter)
+        // This satisfies browser autoplay/permission policies
+        let notifInitialized = false;
+        function handleUserGesture() {
+            if (!notifInitialized) {
+                notifInitialized = true;
+                initNotificationsAndLocation();
+            }
+        }
+
         function goToSignIn() {
+            handleUserGesture();
             gsap.to("body", {
                 opacity: 0, duration: 0.5,
                 onComplete: () => { window.location.href = "signin.html"; }
@@ -637,150 +766,5 @@
         document.body.addEventListener('click', goToSignIn);
     });
     </script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-messaging-compat.js"></script>
-<script>
-const firebaseConfig = {
-   apiKey: "AIzaSyAKGbbt_ARGWep8ggPuk_iE6R1xALkmJM8",
-  authDomain: "trafficiq-3ef14.firebaseapp.comN",
-  projectId: "trafficiq-3ef14",
-  storageBucket: "trafficiq-3ef14.firebasestorage.app",
-  messagingSenderId: "97313655693",
-  appId: "P1:97313655693:web:fee4304d7815bdceaf0bc4"
-};
-
-firebase.initializeApp(firebaseConfig);
-
-const db = firebase.firestore();
-const messaging = firebase.messaging();
-</script>
-<script>
-Notification.requestPermission();
-</script>
-<script>
-if ('serviceWorker' in navigator) {
-navigator.serviceWorker.register('/firebase-messaging-sw.js')
-.then(function(registration) {
-console.log('Service Worker registered');
-});
-}
-</script>
-<script>
-navigator.geolocation.getCurrentPosition(function(position){
-
-const userLat = position.coords.latitude;
-const userLng = position.coords.longitude;
-
-checkTraffic(userLat,userLng);
-
-});
-</script>
-<script>
-async function checkTraffic(userLat,userLng){
-
-const snapshot = await db.collection("traffic_reports").get();
-
-let foundIssue=false;
-
-snapshot.forEach(doc=>{
-
-const data=doc.data();
-
-const distance=getDistance(
-userLat,
-userLng,
-data.latitude,
-data.longitude
-);
-
-if(distance<=2){
-
-foundIssue=true;
-
-showNotification(
-"Traffic Alert Ahead",
-data.issue+" near "+data.location+
-". Expected delay "+data.delay+" minutes."
-);
-
-}
-
-});
-
-if(!foundIssue){
-askUserReport();
-}
-
-}
-</script>
-<script>
-function getDistance(lat1,lon1,lat2,lon2){
-
-const R=6371;
-
-const dLat=(lat2-lat1)*Math.PI/180;
-const dLon=(lon2-lon1)*Math.PI/180;
-
-const a=
-Math.sin(dLat/2)*Math.sin(dLat/2)+
-Math.cos(lat1*Math.PI/180)*
-Math.cos(lat2*Math.PI/180)*
-Math.sin(dLon/2)*Math.sin(dLon/2);
-
-const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-
-return R*c;
-
-}
-</script>
-<script>
-function showNotification(title,body){
-
-if(Notification.permission==="granted"){
-
-new Notification(title,{
-body:body,
-icon:"icon.png"
-});
-
-}
-
-}
-</script> 
-<script>
-function askUserReport(){
-
-const report=confirm("Are there any traffic issues here?");
-
-if(report){
-reportTraffic();
-}
-
-}
-</script>
-<script>
-function reportTraffic(){
-
-const issue=prompt("Enter issue: Accident / Road Block / Heavy Traffic");
-
-navigator.geolocation.getCurrentPosition(async function(position){
-
-await db.collection("traffic_reports").add({
-
-location:"User Report",
-latitude:position.coords.latitude,
-longitude:position.coords.longitude,
-issue:issue,
-delay:20
-
-});
-
-alert("Traffic issue reported");
-
-});
-
-}
-</script>
 </body>
 </html>
