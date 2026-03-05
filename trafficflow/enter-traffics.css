@@ -498,3 +498,27 @@ body{animation:pgIn .65s ease both}
   .vote-btn{font-size:.88rem;padding:12px 8px}
 }
 ::selection{background:rgba(0,207,255,.2)}
+/* ── MOBILE RESPONSIVE ── */
+
+@media (max-width: 900px){
+
+  .layout{
+    grid-template-columns: 1fr;
+  }
+
+  #panel{
+    position:fixed;
+    top:52px;
+    left:0;
+    width:85%;
+    max-width:360px;
+    height:calc(100% - 52px);
+    z-index:300;
+    transform:translateX(-100%);
+  }
+
+  .stream{
+    width:100%;
+  }
+
+}
