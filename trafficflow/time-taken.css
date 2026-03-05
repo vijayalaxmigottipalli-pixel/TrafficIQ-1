@@ -288,37 +288,35 @@ body{animation:pgIn .65s ease both}
   #mobMenuBtn{display:none}
 }
 
-/* ── Mobile overlay ─────────────────── */
+/* ── Mobile Overlay — transparent tap-catcher only ── */
 #mobOverlay{
-  display:none;position:fixed;inset:0;z-index:150;
-  background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
+  display:none;
+  position:fixed;inset:0;z-index:150;
+  background:transparent;
 }
 #mobOverlay.show{display:block}
 
 @media(max-width:860px){
-  /* Full-width single-column: stream fills everything */
+  /* Full-width single-column layout */
   .layout{
     grid-template-columns:1fr;
     grid-template-rows:1fr;
   }
 
-  /* Panel: CSS-only slide-over. GSAP clears its inline styles on mobile in DOMContentLoaded. */
+  /* Panel slides in as overlay from the left — does NOT affect stream width */
   #panel{
-    position:fixed !important;
-    top:52px !important;
-    left:0 !important;
-    bottom:0 !important;
-    width:82% !important;
-    max-width:320px !important;
-    z-index:160 !important;
+    position:fixed;
+    top:52px;left:0;bottom:0;
+    width:82%;max-width:320px;
+    z-index:160;
     transform:translateX(-100%) !important;
     opacity:1 !important;
-    transition:transform .35s cubic-bezier(.4,0,.2,1), box-shadow .35s ease !important;
+    transition:transform .35s cubic-bezier(.4,0,.2,1), box-shadow .35s ease;
     box-shadow:none;
   }
   #panel.open{
     transform:translateX(0) !important;
-    box-shadow:6px 0 40px rgba(0,0,0,.6), 2px 0 0 rgba(0,207,255,.12) !important;
+    box-shadow:6px 0 40px rgba(0,0,0,.55), 2px 0 0 rgba(0,207,255,.1);
   }
 
   /* Stream takes full width */
@@ -328,13 +326,16 @@ body{animation:pgIn .65s ease both}
     width:100%;
   }
 
-  /* Show hamburger, hide old toggle */
+  /* Show the hamburger menu button */
   #mobMenuBtn{display:flex}
+
+  /* Hide the old panel toggle */
   #panTog{display:none}
 
-  /* Compact topbar */
+  /* Compact topbar on mobile */
   .tb-brand h1{font-size:.82rem}
   .live-badge{display:none}
+  .back-btn span{display:none}
 }
 
 @media(max-width:560px){
@@ -343,7 +344,7 @@ body{animation:pgIn .65s ease both}
   .trig{font-size:.67rem;padding:4px 9px}
   .tb-brand h1{font-size:.76rem}
   .inline-poll{padding:7px 12px}
-  .ip-label{display:none}/* hide label on very small screens to save space */
+  .ip-label{display:none}
 }
 
 ::selection{background:rgba(0,207,255,.2)}

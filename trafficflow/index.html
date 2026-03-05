@@ -637,5 +637,150 @@
         document.body.addEventListener('click', goToSignIn);
     });
     </script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-messaging-compat.js"></script>
+<script>
+const firebaseConfig = {
+   apiKey: "AIzaSyAKGbbt_ARGWep8ggPuk_iE6R1xALkmJM8",
+  authDomain: "trafficiq-3ef14.firebaseapp.comN",
+  projectId: "trafficiq-3ef14",
+  storageBucket: "trafficiq-3ef14.firebasestorage.app",
+  messagingSenderId: "97313655693",
+  appId: "P1:97313655693:web:fee4304d7815bdceaf0bc4"
+};
+
+firebase.initializeApp(firebaseConfig);
+
+const db = firebase.firestore();
+const messaging = firebase.messaging();
+</script>
+<script>
+Notification.requestPermission();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+navigator.serviceWorker.register('/firebase-messaging-sw.js')
+.then(function(registration) {
+console.log('Service Worker registered');
+});
+}
+</script>
+<script>
+navigator.geolocation.getCurrentPosition(function(position){
+
+const userLat = position.coords.latitude;
+const userLng = position.coords.longitude;
+
+checkTraffic(userLat,userLng);
+
+});
+</script>
+<script>
+async function checkTraffic(userLat,userLng){
+
+const snapshot = await db.collection("traffic_reports").get();
+
+let foundIssue=false;
+
+snapshot.forEach(doc=>{
+
+const data=doc.data();
+
+const distance=getDistance(
+userLat,
+userLng,
+data.latitude,
+data.longitude
+);
+
+if(distance<=2){
+
+foundIssue=true;
+
+showNotification(
+"Traffic Alert Ahead",
+data.issue+" near "+data.location+
+". Expected delay "+data.delay+" minutes."
+);
+
+}
+
+});
+
+if(!foundIssue){
+askUserReport();
+}
+
+}
+</script>
+<script>
+function getDistance(lat1,lon1,lat2,lon2){
+
+const R=6371;
+
+const dLat=(lat2-lat1)*Math.PI/180;
+const dLon=(lon2-lon1)*Math.PI/180;
+
+const a=
+Math.sin(dLat/2)*Math.sin(dLat/2)+
+Math.cos(lat1*Math.PI/180)*
+Math.cos(lat2*Math.PI/180)*
+Math.sin(dLon/2)*Math.sin(dLon/2);
+
+const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+
+return R*c;
+
+}
+</script>
+<script>
+function showNotification(title,body){
+
+if(Notification.permission==="granted"){
+
+new Notification(title,{
+body:body,
+icon:"icon.png"
+});
+
+}
+
+}
+</script> 
+<script>
+function askUserReport(){
+
+const report=confirm("Are there any traffic issues here?");
+
+if(report){
+reportTraffic();
+}
+
+}
+</script>
+<script>
+function reportTraffic(){
+
+const issue=prompt("Enter issue: Accident / Road Block / Heavy Traffic");
+
+navigator.geolocation.getCurrentPosition(async function(position){
+
+await db.collection("traffic_reports").add({
+
+location:"User Report",
+latitude:position.coords.latitude,
+longitude:position.coords.longitude,
+issue:issue,
+delay:20
+
+});
+
+alert("Traffic issue reported");
+
+});
+
+}
+</script>
 </body>
 </html>

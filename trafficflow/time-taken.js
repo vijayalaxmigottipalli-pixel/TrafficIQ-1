@@ -747,9 +747,6 @@ const overlay = document.getElementById('mobOverlay');
 const mobMenuBtn = document.getElementById('mobMenuBtn');
 
 function togglePanel() {
-  // Kill any active GSAP tweens on the panel so inline styles don't fight CSS
-  gsap.killTweensOf('#panel');
-
   const isOpen = panel.classList.toggle('open');
   overlay.classList.toggle('show', isOpen);
 
@@ -772,13 +769,9 @@ document.addEventListener('keydown', e => {
 window.addEventListener('DOMContentLoaded', () => {
   gsap.to('#topbar', { y: 0, opacity: 1, duration: .6, ease: 'power3.out', delay: .1 });
 
+  // On desktop: animate the panel in. On mobile: keep it hidden (translateX(-100%)).
   if (window.innerWidth > 860) {
-    // Desktop: animate panel sliding in
     gsap.to('#panel', { x: 0, opacity: 1, duration: .75, ease: 'power3.out', delay: .25 });
-  } else {
-    // Mobile: CRITICAL — clear all GSAP inline styles from the panel so pure CSS controls it.
-    // Without this, GSAP's `transform/opacity` inline style overrides the CSS transition.
-    gsap.set('#panel', { clearProps: 'all' });
   }
 
   gsap.from('.stream', { opacity: 0, duration: .5, ease: 'power2.out', delay: .35 });
