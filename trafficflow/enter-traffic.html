@@ -10,12 +10,26 @@
   <link rel="stylesheet" href="enter-traffic.css"/>
 </head>
 <body>
+
 <canvas id="bg"></canvas>
+
 <header id="topbar">
   <div class="tb-l">
     <a href="dashboard.html" class="back-btn">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M5 12l7-7M5 12l7 7"/></svg>Back
     </a>
+
+    <!-- ── MOBILE ISSUES DRAWER BUTTON (visible only on mobile) ── -->
+    <button id="mobPanBtn" onclick="togglePanel()" title="View major issues" aria-label="Toggle issues panel">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3" y1="6"  x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="15" y2="18"/>
+      </svg>
+      <span>Issues</span>
+      <span class="mpb-dot"></span>
+    </button>
+
     <div class="tb-brand">
       <span class="live-badge"><span class="ldot"></span>LIVE</span>
       <h1>Traffic Room · <em id="tbCity">Mumbai</em></h1>
@@ -24,6 +38,7 @@
   <div class="tb-r">
     <div class="tb-stat"><strong id="tbRep">0</strong><span>reporters</span></div>
     <div class="tb-stat"><strong id="tbOnline">0</strong><span>online</span></div>
+    <!-- Desktop panel toggle (hidden on mobile via CSS) -->
     <button id="panTog" class="icon-btn" title="Panel">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/></svg>
     </button>
@@ -79,13 +94,16 @@
   </main>
 </div>
 
+<!-- Overlay to close panel by tapping outside -->
 <div id="mobOverlay" onclick="togglePanel()"></div>
+
 <!-- Firebase compat SDKs -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-analytics-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
 <script>
   const firebaseConfig = {
     apiKey:            "AIzaSyAKGbbt_ARGWep8ggPuk_iE6R1xALkmJM8",
@@ -97,12 +115,15 @@
     appId:             "1:97313655693:web:fee4304d7815bdceaf0bc4",
     measurementId:     "G-N8CC0BE6HS"
   };
+
   firebase.initializeApp(firebaseConfig);
   firebase.analytics();
+
   window._auth = firebase.auth();
   window._db   = firebase.firestore();
   window._rdb  = firebase.database();
 </script>
+
 <script src="enter-traffic.js"></script>
 </body>
 </html>

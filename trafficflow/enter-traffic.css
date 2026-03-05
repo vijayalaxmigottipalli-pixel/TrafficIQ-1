@@ -51,6 +51,39 @@ body{animation:pgIn .65s ease both}
 .icon-btn{width:32px;height:32px;border-radius:8px;border:1px solid var(--bdr);background:rgba(255,255,255,.04);cursor:pointer;color:var(--sub);font-size:.9rem;display:grid;place-items:center;transition:background var(--e),border-color var(--e),color var(--e),transform .3s}
 .icon-btn:hover{background:var(--glow);border-color:var(--c);color:var(--c);transform:rotate(12deg)}
 
+/* ── MOBILE PANEL TOGGLE BUTTON (hamburger) ── */
+#mobPanBtn{
+  display:none; /* hidden on desktop */
+  align-items:center;justify-content:center;gap:6px;
+  padding:5px 11px 5px 8px;
+  border-radius:10px;
+  border:1px solid var(--bdr);
+  background:rgba(0,207,255,.08);
+  color:var(--c);
+  font-size:.68rem;font-weight:700;letter-spacing:.04em;
+  cursor:pointer;
+  position:relative;
+  transition:background var(--e),border-color var(--e),box-shadow var(--e),transform .15s;
+  flex-shrink:0;
+}
+#mobPanBtn:hover{
+  background:var(--glow);
+  border-color:var(--c);
+  box-shadow:0 0 10px var(--glow);
+  transform:translateY(-1px);
+}
+#mobPanBtn:active{transform:scale(.93)}
+#mobPanBtn svg{flex-shrink:0;transition:transform .3s}
+#mobPanBtn.open svg{transform:rotate(90deg)}
+/* Pulse dot to indicate there are issues */
+#mobPanBtn .mpb-dot{
+  width:6px;height:6px;border-radius:50%;
+  background:var(--cr);box-shadow:0 0 6px var(--cr);
+  animation:ld 1.2s ease infinite;
+  display:none;
+}
+#mobPanBtn.has-issues .mpb-dot{display:block}
+
 /* LAYOUT */
 .layout{
   position:fixed;inset:0;top:52px;
@@ -297,17 +330,76 @@ body{animation:pgIn .65s ease both}
 .qi:hover{color:var(--c);border-color:var(--c);background:var(--glow);transform:translateY(-3px);box-shadow:0 4px 12px var(--glow)}
 .qi:active{transform:scale(.88)}
 
-/* MOBILE */
-#mobOverlay{display:none;position:fixed;inset:0;z-index:150;background:rgba(0,0,0,.5);backdrop-filter:blur(4px)}
+/* ══ MOBILE OVERLAY ══ */
+#mobOverlay{
+  display:none;
+  position:fixed;inset:0;top:52px;z-index:150;
+  background:transparent;
+  cursor:pointer;
+}
 #mobOverlay.show{display:block}
+
+/* ══ MOBILE BREAKPOINT ══ */
 @media(max-width:860px){
-  .layout{grid-template-columns:1fr}
-  #panel{position:fixed;top:52px;left:0;bottom:0;width:80%;max-width:300px;z-index:160;transform:translateX(-100%)!important;opacity:1!important;transition:transform .35s cubic-bezier(.4,0,.2,1)}
-  #panel.open{transform:translateX(0)!important}
-  .stream{height:calc(100vh - 52px)}
+  /* Full-width layout — panel is OVERLAID not inline */
+  .layout{
+    grid-template-columns:1fr;
+  }
+
+  /* Show the hamburger button */
+  #mobPanBtn{
+    display:flex;
+  }
+
+  /* Hide the desktop panel toggle (panTog) on mobile to avoid duplication */
+  #panTog{
+    display:none;
+  }
+
+  /* Panel slides in from the left as a drawer */
+  #panel{
+    position:fixed;
+    top:52px;left:0;bottom:0;
+    width:82%;max-width:310px;
+    z-index:160;
+    /* Override the GSAP entrance — always stay hidden until toggled */
+    transform:translateX(-100%) !important;
+    opacity:1 !important;
+    transition:transform .35s cubic-bezier(.4,0,.2,1),
+               box-shadow .35s ease;
+    box-shadow:none;
+  }
+  #panel.open{
+    transform:translateX(0) !important;
+    box-shadow:6px 0 40px rgba(0,0,0,.5), 2px 0 16px var(--glow);
+  }
+
+  /* Stream takes full width */
+  .stream{
+    grid-column:1;
+    height:calc(100dvh - 52px);
+    width:100%;
+  }
+
+  /* Triggers wrap nicely */
+  .triggers{
+    overflow-x:auto;
+    flex-wrap:nowrap;
+    padding-bottom:2px;
+    scrollbar-width:none;
+  }
+  .triggers::-webkit-scrollbar{display:none}
+  .trig{white-space:nowrap;flex-shrink:0}
 }
+
 @media(max-width:560px){
-  .qi{width:28px;height:28px}.qnav{gap:3px}
-  .tb-stat{display:none}.trig{font-size:.67rem;padding:4px 9px}
+  .qi{width:28px;height:28px}
+  .qnav{gap:3px}
+  .tb-stat{display:none}
+  .trig{font-size:.67rem;padding:4px 9px}
+  .tb-brand h1{font-size:.82rem}
+  #mobPanBtn span{display:none} /* icon only on very small screens */
+  #mobPanBtn{padding:5px 8px}
 }
+
 ::selection{background:rgba(0,207,255,.2)}

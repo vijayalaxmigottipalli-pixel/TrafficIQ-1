@@ -152,11 +152,6 @@ const S = {
   get email() { return (firebase.auth().currentUser || {}).email || ''; },
   _unsubMessages: null,
 
-  /*
-    likedKeys stores "authorName__msgId" strings so we know:
-    - which specific message the user liked (to show liked state on the button)
-    - prevents double-liking the same message
-  */
   likedKeys: new Set(JSON.parse(localStorage.getItem('tiq-liked-keys') || '[]')),
 };
 
@@ -203,53 +198,26 @@ function timeStr(timestamp) {
 }
 
 const renderedIds  = new Set();
-const likeListeners = {}; // keyed by msgId (not authorName) for per-message counts
+const likeListeners = {};
 
-/* ══ LIKE A MESSAGE ══
-   Dual-collection structure:
-   ─────────────────────────────────────────────────────────
-   messageLikeCounts/{msgId}
-     likeCount: 3              ← per-message like count (shown on button)
-
-   message_likes/{authorName}
-     authorName: "Driver_484"
-     likeCount:  7             ← leaderboard total (all messages, all pages)
-     lastUpdated: timestamp
-     likers/
-       "{liker}__{msgId}": { likedAt, liker, msgId, page }
-   ─────────────────────────────────────────────────────────
-   Key insight:
-   - Like button shows count from messageLikeCounts/{msgId}
-   - Leaderboard reads message_likes/{authorName}.likeCount
-   - Both are incremented atomically on each like action
-══ */
+/* ══ LIKE A MESSAGE ══ */
 function likeMessage(msgId, authorName, btnEl) {
   if (!window._db) return;
 
-  // Unique key = who liked + which message
   const likeKey = S.name + '__' + msgId;
-  if (S.likedKeys.has(likeKey)) return; // already liked this specific message
+  if (S.likedKeys.has(likeKey)) return;
 
-  // Can't like your own messages
   if (authorName === S.name) {
     gsap.fromTo(btnEl, { x: -4 }, { x: 0, duration: .3, ease: 'elastic.out(1,.4)', clearProps: 'x' });
     return;
   }
 
-  // Safe doc ID for the liker sub-collection: "{liker}__{msgId}"
   const safeKey = (S.name + '__' + msgId).replace(/[^a-zA-Z0-9_\-]/g, '_');
 
-  // ── Collection refs ──
-  // Per-message like count (shown on the like button)
   const msgLikeCountRef = window._db.collection('messageLikeCounts').doc(msgId);
+  const authorDocRef    = window._db.collection('message_likes').doc(authorName);
+  const likerRef        = authorDocRef.collection('likers').doc(safeKey);
 
-  // Per-author leaderboard doc (total likes across all pages)
-  const authorDocRef = window._db.collection('message_likes').doc(authorName);
-
-  // Sub-doc that prevents double-liking this specific message
-  const likerRef = authorDocRef.collection('likers').doc(safeKey);
-
-  // ── Optimistic UI update ──
   S.likedKeys.add(likeKey);
   persistLiked();
   btnEl.classList.add('liked');
@@ -258,8 +226,6 @@ function likeMessage(msgId, authorName, btnEl) {
   if (countEl) countEl.textContent = parseInt(countEl.textContent || '0') + 1;
   gsap.fromTo(btnEl, { scale: 1.4 }, { scale: 1, duration: .4, ease: 'back.out(2)' });
 
-  // ── Write to Firestore ──
-  // Step 1: Record that this liker liked this specific message (idempotency guard)
   likerRef.set({
     likedAt: firebase.firestore.FieldValue.serverTimestamp(),
     liker:   S.name,
@@ -267,13 +233,11 @@ function likeMessage(msgId, authorName, btnEl) {
     page:    'enter-traffic',
   })
   .then(() => {
-    // Step 2a: Increment per-message like count (drives the like button UI)
     const p1 = msgLikeCountRef.set({
       likeCount:   firebase.firestore.FieldValue.increment(1),
       lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    // Step 2b: Increment author's leaderboard total (drives the leaderboard)
     const p2 = authorDocRef.set({
       authorName:  authorName,
       likeCount:   firebase.firestore.FieldValue.increment(1),
@@ -287,7 +251,6 @@ function likeMessage(msgId, authorName, btnEl) {
   })
   .catch(err => {
     console.error('[TrafficIQ] Like failed:', err);
-    // Rollback optimistic update
     S.likedKeys.delete(likeKey);
     persistLiked();
     btnEl.classList.remove('liked');
@@ -296,14 +259,7 @@ function likeMessage(msgId, authorName, btnEl) {
   });
 }
 
-/* ══ SUBSCRIBE TO LIVE LIKE COUNT for a specific message ══
-   Listens to messageLikeCounts/{msgId} so the button shows
-   the count for THIS message only (not the author's total).
-
-   Previously this listened to message_likes/{authorName} which
-   caused all messages from the same author to show the same
-   aggregated count — now each message has its own counter.
-══ */
+/* ══ SUBSCRIBE TO LIVE LIKE COUNT ══ */
 function subscribeLikes(msgId, btnEl) {
   if (!likeListeners[msgId]) {
     likeListeners[msgId] = {
@@ -313,11 +269,9 @@ function subscribeLikes(msgId, btnEl) {
           if (likeListeners[msgId]) {
             likeListeners[msgId].btns.forEach(b => {
               const c = b.querySelector('.like-count');
-              // Only update if button is not in optimistic-liked state to avoid flicker
               if (c && !b.classList.contains('liked')) {
                 c.textContent = count;
               } else if (c && b.classList.contains('liked')) {
-                // Show at least the server count (may be higher from others liking concurrently)
                 const current = parseInt(c.textContent || '0');
                 if (count > current) c.textContent = count;
               }
@@ -378,7 +332,6 @@ function addMsg({ id, name, role, score, init, msg, timestamp, own = false }) {
     if (btn && !isOwnMsg && !alreadyLiked) {
       btn.addEventListener('click', () => likeMessage(id, name, btn));
     }
-    // Subscribe to per-message like count (keyed by msgId, not authorName)
     if (btn) subscribeLikes(id, btn);
   }
 
@@ -453,19 +406,36 @@ document.getElementById('chatInp').addEventListener('keydown', e => {
   if (e.key === 'Enter') sendMsg();
 });
 
-/* ══ MOBILE PANEL ══ */
+/* ══ MOBILE PANEL TOGGLE ══ */
 const panel   = document.getElementById('panel');
 const overlay = document.getElementById('mobOverlay');
+const mobBtn  = document.getElementById('mobPanBtn');
+
 function togglePanel() {
-  panel.classList.toggle('open');
-  overlay.classList.toggle('show');
+  const isOpen = panel.classList.toggle('open');
+  overlay.classList.toggle('show', isOpen);
+  if (mobBtn) mobBtn.classList.toggle('open', isOpen);
 }
-document.getElementById('panTog').addEventListener('click', togglePanel);
+
+// Desktop panel toggle (panTog) — only visible on desktop
+document.getElementById('panTog').addEventListener('click', () => {
+  // On desktop the panel is always visible via grid; this toggles it as a collapse
+  panel.classList.toggle('open');
+});
 
 /* ══ GSAP ENTRANCE ══ */
 window.addEventListener('DOMContentLoaded', () => {
   gsap.to('#topbar', { y: 0, opacity: 1, duration: .6,  ease: 'power3.out', delay: .1  });
-  gsap.to('#panel',  { x: 0, opacity: 1, duration: .75, ease: 'power3.out', delay: .25 });
+
+  // On desktop, animate panel in normally
+  // On mobile, keep it hidden (translateX stays -100% via CSS)
+  if (window.innerWidth > 860) {
+    gsap.to('#panel', { x: 0, opacity: 1, duration: .75, ease: 'power3.out', delay: .25 });
+  } else {
+    // Mobile: make panel visible but off-screen (CSS handles position)
+    gsap.set('#panel', { opacity: 1 });
+  }
+
   const streamEl = document.querySelector('.stream');
   if (streamEl) gsap.from(streamEl, { opacity: 0, duration: .5, ease: 'power2.out', delay: .35 });
 });
@@ -491,6 +461,9 @@ function renderIssuePanel(issueCounts) {
   container.querySelectorAll('.issue-card, .no-issues-msg').forEach(el => el.remove());
 
   const totalIssues = Object.values(issueCounts).reduce((a, b) => a + b, 0);
+
+  // Update mobile button dot indicator
+  if (mobBtn) mobBtn.classList.toggle('has-issues', totalIssues > 0);
 
   if (totalIssues === 0) {
     const empty = document.createElement('div');
@@ -550,7 +523,6 @@ function attachCityListeners(db, rdb, cityName) {
 
   if (S._unsubMessages) { S._unsubMessages(); S._unsubMessages = null; }
 
-  // Unsubscribe all per-message like listeners from previous city session
   Object.values(likeListeners).forEach(obj => obj.unsub && obj.unsub());
   for (const k in likeListeners) delete likeListeners[k];
 
