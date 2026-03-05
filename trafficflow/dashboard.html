@@ -27,7 +27,7 @@
     .search-pin { width:20px; height:20px; background:#e53935; border-radius:50% 50% 50% 0; transform:rotate(-45deg); border:3px solid #fff; box-shadow:0 3px 12px rgba(229,57,53,.6); animation:pin-drop .4s cubic-bezier(.36,.07,.19,.97) both; }
     @keyframes pin-drop { from{transform:rotate(-45deg) translateY(-30px);opacity:0} to{transform:rotate(-45deg) translateY(0);opacity:1} }
 
-    /* Location search */
+    /* DESKTOP Location search */
     #locationSearch { position:fixed; top:68px; left:50%; transform:translateX(-50%); z-index:300; display:flex; flex-direction:column; align-items:center; width:min(420px,92vw); }
     .loc-wrap { width:100%; display:flex; align-items:center; background:var(--card); border:1px solid var(--bdr); border-radius:12px; backdrop-filter:blur(22px) saturate(1.8); box-shadow:0 4px 24px rgba(0,0,0,.12); padding:0 12px; gap:8px; transition:border-color .2s,box-shadow .2s; }
     .loc-wrap:focus-within { border-color:var(--c); box-shadow:0 4px 24px rgba(0,0,0,.12),0 0 0 3px var(--glow); }
@@ -67,7 +67,13 @@
     #aiRefreshBtn:disabled { opacity:.5; pointer-events:none; }
     @keyframes aiSpin { to{transform:rotate(360deg)} }
 
-    /* ── Live green dot on Active Users card ── */
+    /* Same button in mobile sheet */
+    #mAiRefreshBtn { display:inline-flex; align-items:center; gap:5px; background:none; border:1px solid var(--bdr); border-radius:8px; padding:4px 10px; font-family:'Plus Jakarta Sans',sans-serif; font-size:.68rem; font-weight:600; color:var(--sub); cursor:pointer; transition:color .2s,border-color .2s,background .2s,transform .15s; white-space:nowrap; }
+    #mAiRefreshBtn:hover { color:var(--c); border-color:var(--c); background:var(--glow); }
+    #mAiRefreshBtn.spinning svg { animation:aiSpin .7s linear infinite; }
+    #mAiRefreshBtn:disabled { opacity:.5; pointer-events:none; }
+
+    /* ── Live green dot ── */
     .live-dot { width:7px; height:7px; border-radius:50%; background:#22c55e; box-shadow:0 0 5px #22c55e; animation:ldot 1.3s ease infinite; flex-shrink:0; display:inline-block; }
     @keyframes ldot { 0%,100%{opacity:1} 50%{opacity:.2} }
   </style>
@@ -77,6 +83,9 @@
 <div id="map"></div>
 <div id="veh" class="veh"><div id="vehIco"></div><div class="veh-shade"></div></div>
 
+<!-- ══════════════════════════════════════════════
+     NAV
+══════════════════════════════════════════════ -->
 <nav id="nav">
   <div class="n-left">
     <a href="signin.html" class="back-btn">
@@ -99,6 +108,7 @@
   </div>
 </nav>
 
+<!-- Mobile nav dropdown -->
 <div id="mob">
   <a href="dashboard.html">🏠 Home</a><a href="shortcuts.html">⚡ Shortcuts</a>
   <a href="time-taken.html">⏱ Time Taken</a><a href="enter-traffics.html">🚦 Enter Traffic?</a>
@@ -106,6 +116,9 @@
   <a href="trusted-users.html">⭐ Trusted Users</a>
 </div>
 
+<!-- ══════════════════════════════════════════════
+     DESKTOP — Location search bar
+══════════════════════════════════════════════ -->
 <div id="locationSearch">
   <div class="loc-wrap">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -115,8 +128,25 @@
   <div id="locDrop"></div>
 </div>
 
+<!-- DESKTOP Route Panel -->
+<div id="routePanel">
+  <div class="route-input">
+    <label>Source</label>
+    <input id="sourceInput" placeholder="Select source location">
+  </div>
+  <div class="route-input">
+    <label>Destination</label>
+    <input id="destInput" placeholder="Select destination">
+  </div>
+  <button id="routeBtn" onclick="startNavigation()">Find Route</button>
+</div>
+
+<!-- GPS Toast -->
 <div id="gpsTst"></div>
 
+<!-- ══════════════════════════════════════════════
+     DESKTOP — Bottom panel
+══════════════════════════════════════════════ -->
 <div id="panel">
   <div class="hero">
     <p class="hi-txt">🚦 Hi <strong id="uname">there</strong>, find problems in</p>
@@ -135,7 +165,6 @@
       <div class="clvl" id="clvl">–</div>
     </div>
 
-    <!-- ACTIVE USERS — real count from Firestore presence collection -->
     <div class="card">
       <div class="ch">
         <span class="lbl">ACTIVE USERS</span>
@@ -145,7 +174,6 @@
       <div id="avs" class="avs"></div>
     </div>
 
-    <!-- AI SUMMARY -->
     <div class="card wide">
       <div class="ch">
         <span class="lbl">AI SUMMARY</span>
@@ -177,6 +205,7 @@
   </div>
 </div>
 
+<!-- Desktop vehicle preview -->
 <div id="vehPreview" class="veh-preview">
   <div class="veh-preview-inner">
     <div id="vehPreviewSvg"></div>
@@ -184,6 +213,7 @@
   </div>
 </div>
 
+<!-- Desktop zoom controls -->
 <div id="pageZoom" class="page-zoom">
   <button id="zoomIn"    title="Zoom In Map">＋</button>
   <div    id="zoomPct"   class="zoom-pct">Z 15</div>
@@ -191,7 +221,141 @@
   <button id="zoomReset" title="Reset Map View">↺</button>
 </div>
 
-<!-- LOCATION PERMISSION OVERLAY -->
+<!-- ══════════════════════════════════════════════
+     MOBILE — Bottom Sheet (all UI in one place)
+══════════════════════════════════════════════ -->
+<div id="mobileSheet">
+  <!-- Drag handle -->
+  <div class="sheet-handle" id="sheetHandle"></div>
+
+  <!-- Tab bar -->
+  <div class="sheet-tabs">
+    <button class="sheet-tab active" data-tab="search" onclick="switchTab('search',this)">
+      <span class="sheet-tab-icon">🔍</span>Search
+    </button>
+    <button class="sheet-tab" data-tab="route" onclick="switchTab('route',this)">
+      <span class="sheet-tab-icon">🗺️</span>Route
+    </button>
+    <button class="sheet-tab" data-tab="stats" onclick="switchTab('stats',this)">
+      <span class="sheet-tab-icon">📊</span>Stats
+    </button>
+    <button class="sheet-tab" data-tab="vehicle" onclick="switchTab('vehicle',this)">
+      <span class="sheet-tab-icon">🚗</span>Vehicle
+    </button>
+  </div>
+
+  <!-- Sheet content -->
+  <div class="sheet-content">
+
+    <!-- SEARCH PANE -->
+    <div class="sheet-pane active" id="pane-search">
+      <div class="m-hero">
+        <p class="m-hi">🚦 Hi <strong id="mUname">there</strong></p>
+        <button id="mCityBtn" onclick="goCityRoom()">
+          <span class="cblink"></span><span id="mCname">Bhimavaram</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M7 17L17 7M17 7H7M17 7v10"/></svg>
+        </button>
+        <p class="hint" style="font-size:.68rem;">Tap to enter live traffic room</p>
+      </div>
+      <div style="height:12px;"></div>
+      <div class="m-search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input id="mLocInput" type="text" placeholder="Search location in Bhimavaram…" autocomplete="off" spellcheck="false"/>
+        <button style="background:none;border:none;cursor:pointer;color:var(--sub);font-size:.9rem;padding:4px;" onclick="clearMobSearch()">✕</button>
+      </div>
+      <div id="mLocDrop"></div>
+    </div>
+
+    <!-- ROUTE PANE -->
+    <div class="sheet-pane" id="pane-route">
+      <div class="m-route">
+        <div class="m-route-input">
+          <label>Source</label>
+          <input id="mSourceInput" placeholder="Select source location" onfocus="mSelectingSource=true">
+        </div>
+        <div class="m-route-input">
+          <label>Destination</label>
+          <input id="mDestInput" placeholder="Select destination" onfocus="mSelectingSource=false">
+        </div>
+        <button id="mRouteBtn" onclick="startMobileNavigation()">🗺️ Find Route</button>
+      </div>
+    </div>
+
+    <!-- STATS PANE -->
+    <div class="sheet-pane" id="pane-stats">
+      <div class="m-cards">
+        <!-- Congestion -->
+        <div class="m-card">
+          <div class="ch"><span class="lbl">LIVE CONGESTION</span><span class="ldot"></span></div>
+          <div class="cbar"><div id="mCfill"></div></div>
+          <div class="ctks"><span>Low</span><span>Moderate</span><span>Heavy</span></div>
+          <div class="clvl" id="mClvl">–</div>
+        </div>
+        <!-- Active Users -->
+        <div class="m-card">
+          <div class="ch">
+            <span class="lbl">ACTIVE USERS</span>
+            <span class="live-dot"></span>
+          </div>
+          <div class="rnum"><span id="mRct">–</span><span class="rsub">online now</span></div>
+          <div id="mAvs" class="avs"></div>
+        </div>
+        <!-- AI Summary -->
+        <div class="m-card">
+          <div class="ch">
+            <span class="lbl">AI SUMMARY</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button id="mAiRefreshBtn" onclick="onAiRefreshClickMobile()" title="Refresh AI Summary">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                Refresh
+              </button>
+              <span class="ai-tag">GPT</span>
+            </div>
+          </div>
+          <p id="mAitxt" style="font-size:.8rem;line-height:1.6;color:var(--txt);margin-bottom:8px;min-height:44px;">Press Refresh to generate AI summary.</p>
+          <div class="ameta"><span>⏱ <strong id="mAdly">–</strong></span><span>📍 <strong id="mAspt">–</strong></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VEHICLE PANE -->
+    <div class="sheet-pane" id="pane-vehicle">
+      <div class="m-vpick">
+        <button class="m-vb active" onclick="setVMobile('car',this)">
+          <span class="m-vb-icon">🚗</span><span class="m-vb-label">Car</span>
+        </button>
+        <button class="m-vb" onclick="setVMobile('bike',this)">
+          <span class="m-vb-icon">🏍️</span><span class="m-vb-label">Bike</span>
+        </button>
+        <button class="m-vb" onclick="setVMobile('auto',this)">
+          <span class="m-vb-icon">🛺</span><span class="m-vb-label">Auto</span>
+        </button>
+      </div>
+      <div id="mVehPreviewSvg" style="display:flex;justify-content:center;margin-top:10px;"></div>
+    </div>
+
+  </div><!-- /sheet-content -->
+</div><!-- /mobileSheet -->
+
+<!-- MOBILE zoom controls -->
+<div id="mZoom">
+  <button id="mZoomIn" onclick="map&&map.zoomIn()">＋</button>
+  <div id="mZoomPct" class="zoom-pct">15</div>
+  <button id="mZoomOut" onclick="map&&map.zoomOut()">－</button>
+  <button onclick="map&&map.flyTo([16.5449,81.5212],15)">↺</button>
+</div>
+
+<!-- MOBILE map peek button (toggles sheet) -->
+<button id="mMapBtn" onclick="toggleMobileSheet()">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+  <span id="mMapBtnTxt">Open Panel</span>
+</button>
+
+<!-- ══════════════════════════════════════════════
+     LOCATION PERMISSION OVERLAY
+══════════════════════════════════════════════ -->
 <div id="locOverlay">
   <div id="locOverlayCard">
     <div id="locOverlayIcon">📍</div>
@@ -233,23 +397,13 @@
 #locOverlayError { display:none; background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.25); border-radius:10px; padding:10px 14px; font-size:.76rem; color:#ef4444; text-align:center; width:100%; line-height:1.5; }
 </style>
 
-<!-- ══ FIREBASE — Firestore only (presence via Firestore collection) ══ -->
+<!-- ══ FIREBASE — Firestore only ══ -->
 <script type="module">
   import { initializeApp }   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAnalytics }    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
   import {
-    getFirestore,
-    collection,
-    doc,
-    setDoc,
-    deleteDoc,
-    onSnapshot,
-    serverTimestamp,
-    query,
-    where,
-    orderBy,
-    limit,
-    getDocs
+    getFirestore, collection, doc, setDoc, deleteDoc,
+    onSnapshot, serverTimestamp, query, where, orderBy, limit, getDocs
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -267,7 +421,6 @@
   getAnalytics(app);
   const db = getFirestore(app);
 
-  // ── Expose Firestore helpers to dashboard.js ──
   window.db           = db;
   window.fsCollection = collection;
   window.fsDoc        = doc;
@@ -284,114 +437,276 @@
   window.limit        = limit;
   window.onSnapshot   = onSnapshot;
 
-  // ════════════════════════════════════════════════
-  //  PRESENCE SYSTEM using Firestore `presence` collection
-  //
-  //  Strategy:
-  //  1. On page load  → write doc: presence/{sessionId}
-  //                     { online: true, lastSeen: serverTimestamp() }
-  //  2. Heartbeat     → update lastSeen every 30s to stay "alive"
-  //  3. beforeunload  → delete the doc so count drops immediately
-  //  4. onSnapshot    → stream count of docs where online==true
-  //     (Firestore doesn't have native onDisconnect like RTDB,
-  //      so we combine heartbeat + cleanup for accuracy)
-  //
-  //  Stale sessions (tab crashed without beforeunload) are
-  //  auto-detected: any doc with lastSeen older than 90s is
-  //  ignored when counting (cleaned up on next heartbeat cycle).
-  // ════════════════════════════════════════════════
-
-  // Generate a unique session ID for this browser tab
   const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
   const myDocRef  = doc(db, 'presence', sessionId);
 
-  // Write this session as online
   async function registerPresence() {
-    try {
-      await setDoc(myDocRef, {
-        online:    true,
-        lastSeen:  serverTimestamp(),
-        sessionId: sessionId
-      });
-    } catch (e) { console.warn('[Presence] register error:', e); }
+    try { await setDoc(myDocRef, { online: true, lastSeen: serverTimestamp(), sessionId }); }
+    catch (e) { console.warn('[Presence] register error:', e); }
   }
-
-  // Heartbeat — keep lastSeen fresh every 30 seconds
   async function heartbeat() {
-    try {
-      await setDoc(myDocRef, {
-        online:    true,
-        lastSeen:  serverTimestamp(),
-        sessionId: sessionId
-      }, { merge: true });
-    } catch (e) { console.warn('[Presence] heartbeat error:', e); }
+    try { await setDoc(myDocRef, { online: true, lastSeen: serverTimestamp(), sessionId }, { merge: true }); }
+    catch (e) { console.warn('[Presence] heartbeat error:', e); }
   }
-
-  // Remove this session on tab close / navigation
   async function removePresence() {
     try { await deleteDoc(myDocRef); } catch (e) {}
   }
 
-  // Register immediately
   registerPresence();
-
-  // Heartbeat every 30s
   const heartbeatInterval = setInterval(heartbeat, 30000);
 
-  // Cleanup on page unload
   window.addEventListener('beforeunload', () => {
     clearInterval(heartbeatInterval);
-    // Use sendBeacon for reliable cleanup even when tab closes fast
-    // Firestore REST API delete — best-effort on unload
     const url = `https://firestore.googleapis.com/v1/projects/trafficiq-3ef14/databases/(default)/documents/presence/${sessionId}`;
-    navigator.sendBeacon && navigator.sendBeacon(url); // won't always work for DELETE, but we try
+    navigator.sendBeacon && navigator.sendBeacon(url);
     removePresence();
   });
+  document.addEventListener('visibilitychange', () => heartbeat());
 
-  // Also cleanup on visibility change (mobile browsers)
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      heartbeat(); // update lastSeen when going to background
-    } else {
-      heartbeat(); // refresh when coming back
-    }
-  });
-
-  // ── Listen to the entire presence collection ──
-  // Count docs that have lastSeen within the last 90 seconds
-  // (handles stale sessions from crashed tabs)
   const presenceColRef = collection(db, 'presence');
-
   onSnapshot(presenceColRef, (snapshot) => {
-    const now       = Date.now();
-    const threshold = 90 * 1000; // 90 seconds — stale if older than this
-    let liveCount   = 0;
-
+    const now = Date.now(), threshold = 90 * 1000;
+    let liveCount = 0;
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
       if (!data.online) return;
-
-      // Check lastSeen — Firestore Timestamp has .toMillis()
       if (data.lastSeen && data.lastSeen.toMillis) {
-        const age = now - data.lastSeen.toMillis();
-        if (age <= threshold) liveCount++;
-      } else {
-        // If lastSeen not yet written (pending serverTimestamp), count it
-        liveCount++;
-      }
+        if (now - data.lastSeen.toMillis() <= threshold) liveCount++;
+      } else { liveCount++; }
     });
-
-    // Push to dashboard.js
-    if (typeof window.updateLiveUsers === 'function') {
-      window.updateLiveUsers(liveCount);
-    } else {
-      window.__pendingUserCount = liveCount;
-    }
-  }, (err) => {
-    console.warn('[Presence] snapshot error:', err);
-  });
+    if (typeof window.updateLiveUsers === 'function') window.updateLiveUsers(liveCount);
+    else window.__pendingUserCount = liveCount;
+  }, (err) => console.warn('[Presence] snapshot error:', err));
 </script>
 
 <script src="dashboard.js"></script>
+
+<!-- ══════════════════════════════════════════════
+     MOBILE SHEET INTERACTIVITY
+══════════════════════════════════════════════ -->
+<script>
+/* ─ Tab switching ─ */
+function switchTab(tab, btn) {
+  document.querySelectorAll('.sheet-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.sheet-pane').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('pane-' + tab).classList.add('active');
+  // Auto-expand sheet when switching tabs
+  expandSheet();
+}
+window.switchTab = switchTab;
+
+/* ─ Sheet expand/collapse ─ */
+let sheetExpanded = false;
+function expandSheet() {
+  const sheet = document.getElementById('mobileSheet');
+  sheet.classList.add('expanded');
+  sheetExpanded = true;
+  document.getElementById('mMapBtnTxt').textContent = 'Map';
+}
+function collapseSheet() {
+  const sheet = document.getElementById('mobileSheet');
+  sheet.classList.remove('expanded');
+  sheetExpanded = false;
+  document.getElementById('mMapBtnTxt').textContent = 'Open Panel';
+}
+function toggleMobileSheet() {
+  sheetExpanded ? collapseSheet() : expandSheet();
+}
+window.toggleMobileSheet = toggleMobileSheet;
+
+/* ─ Drag handle touch interaction ─ */
+(function(){
+  const handle = document.getElementById('sheetHandle');
+  const sheet  = document.getElementById('mobileSheet');
+  if (!handle || !sheet) return;
+
+  let startY = 0, startPosExpanded = false;
+
+  handle.addEventListener('touchstart', e => {
+    startY = e.touches[0].clientY;
+    startPosExpanded = sheetExpanded;
+  }, { passive: true });
+
+  handle.addEventListener('touchend', e => {
+    const deltaY = e.changedTouches[0].clientY - startY;
+    if (deltaY > 40)       collapseSheet();
+    else if (deltaY < -40) expandSheet();
+    // small swipe = toggle
+    else if (Math.abs(deltaY) < 10) toggleMobileSheet();
+  }, { passive: true });
+
+  // Also allow clicking the handle area on the sheet-tabs row
+  document.getElementById('mobileSheet').addEventListener('click', e => {
+    if (e.target.closest('.sheet-handle') || e.target === handle) {
+      toggleMobileSheet();
+    }
+  });
+})();
+
+/* ─ Mobile location search ─ */
+const mLocInput = document.getElementById('mLocInput');
+const mLocDrop  = document.getElementById('mLocDrop');
+let mSearchTimeout;
+let mSelectingSource = true;
+
+if (mLocInput) {
+  mLocInput.addEventListener('input', () => {
+    const q = mLocInput.value.trim();
+    if (q.length < 3) { mLocDrop.classList.remove('open'); return; }
+    clearTimeout(mSearchTimeout);
+    mSearchTimeout = setTimeout(async () => {
+      const res  = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)} bhimavaram&limit=6`);
+      const data = await res.json();
+      if (!data.length) { mLocDrop.classList.remove('open'); return; }
+      mLocDrop.innerHTML = data.map(place => `
+        <div class="loc-item" onclick="mSelectPlace(${parseFloat(place.lat)},${parseFloat(place.lon)},'${place.display_name.replace(/'/g,'')}','Place')">
+          📍 ${place.display_name}
+        </div>`).join('');
+      mLocDrop.classList.add('open');
+    }, 300);
+  });
+
+  mLocInput.addEventListener('keydown', async e => {
+    if (e.key !== 'Enter') return;
+    const q = mLocInput.value.trim();
+    if (!q) return;
+    const res  = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`);
+    const data = await res.json();
+    if (!data.length) { alert('Location not found'); return; }
+    mSelectPlace(parseFloat(data[0].lat), parseFloat(data[0].lon), data[0].display_name, 'Place');
+  });
+
+  mLocInput.addEventListener('focus', () => {
+    if (!mLocInput.value.trim() && typeof currentLat !== 'undefined' && currentLat) {
+      mLocDrop.innerHTML = `<div class="loc-item" onclick="mUseCurrentLocation()">📍 Current Location</div>`;
+      mLocDrop.classList.add('open');
+    }
+  });
+}
+
+function mUseCurrentLocation() {
+  if (!currentLat || !currentLon) { alert('Current location not detected yet'); return; }
+  if (mSelectingSource) {
+    sourceLat = currentLat; sourceLon = currentLon;
+    document.getElementById('mSourceInput').value = 'Current Location';
+    mSelectingSource = false;
+  } else {
+    destLat = currentLat; destLon = currentLon;
+    document.getElementById('mDestInput').value = 'Current Location';
+  }
+  mLocInput.value = 'Current Location';
+  mLocDrop.classList.remove('open');
+  if (typeof map !== 'undefined' && map) map.flyTo([currentLat, currentLon], 17);
+}
+window.mUseCurrentLocation = mUseCurrentLocation;
+
+function mSelectPlace(lat, lon, name, type) {
+  if (mSelectingSource) {
+    sourceLat = lat; sourceLon = lon;
+    document.getElementById('mSourceInput').value = name;
+    mSelectingSource = false;
+  } else {
+    destLat = lat; destLon = lon;
+    document.getElementById('mDestInput').value = name;
+  }
+  mLocInput.value = name;
+  mLocDrop.classList.remove('open');
+  if (typeof map !== 'undefined' && map) {
+    if (typeof userMarker !== 'undefined' && userMarker) map.removeLayer(userMarker);
+    window.userMarker = L.marker([lat, lon], { icon: makeVehicleIcon(S.vehicle), zIndexOffset: 1000 }).addTo(map);
+    window.userMarker.bindPopup(`<b>${name}</b><br><button onclick="startMobileNavigation()" class="dirBtn">Directions</button>`).openPopup();
+    map.flyTo([lat, lon], 17, { animate: true, duration: 1.1, easeLinearity: 0.3 });
+  }
+  // Sync city name in mobile sheet
+  const mCname = document.getElementById('mCname');
+  if (mCname) mCname.textContent = name.split(',')[0] || name;
+  // Collapse sheet to reveal map
+  setTimeout(collapseSheet, 400);
+}
+window.mSelectPlace = mSelectPlace;
+
+function clearMobSearch() {
+  mLocInput.value = '';
+  mLocDrop.classList.remove('open');
+}
+window.clearMobSearch = clearMobSearch;
+
+/* ─ Mobile route finding ─ */
+function startMobileNavigation() {
+  if (!sourceLat || !sourceLon) { alert('Select source first'); return; }
+  if (!destLat   || !destLon  ) { alert('Select destination'); return; }
+  if (typeof getRoute === 'function') getRoute(sourceLat, sourceLon, destLat, destLon);
+  // Collapse sheet after finding route so map is visible
+  setTimeout(collapseSheet, 600);
+}
+window.startMobileNavigation = startMobileNavigation;
+
+/* ─ Mobile source/dest inputs (sync with selectPlace) ─ */
+(function(){
+  const src  = document.getElementById('mSourceInput');
+  const dest = document.getElementById('mDestInput');
+  if (src)  src.addEventListener('focus',  () => { mSelectingSource = true;  });
+  if (dest) dest.addEventListener('focus', () => { mSelectingSource = false; });
+})();
+
+/* ─ Mobile vehicle selector ─ */
+function setVMobile(type, btn) {
+  document.querySelectorAll('.m-vb').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  // Also update desktop
+  if (typeof setV === 'function') {
+    // Find corresponding desktop button
+    document.querySelectorAll('.vb').forEach(b => {
+      if (b.getAttribute('onclick') && b.getAttribute('onclick').includes("'"+type+"'")) b.classList.add('active');
+      else b.classList.remove('active');
+    });
+    if (typeof S !== 'undefined') S.vehicle = type;
+    if (typeof userMarker !== 'undefined' && userMarker && typeof makeVehicleIcon === 'function')
+      userMarker.setIcon(makeVehicleIcon(type));
+    // Preview SVG
+    const prev = document.getElementById('mVehPreviewSvg');
+    if (prev && typeof VEH !== 'undefined') prev.innerHTML = VEH[type] || '';
+  }
+}
+window.setVMobile = setVMobile;
+
+/* ─ Mobile AI Refresh ─ */
+function onAiRefreshClickMobile() {
+  const btn  = document.getElementById('mAiRefreshBtn');
+  const atxt = document.getElementById('mAitxt');
+  if (!btn) return;
+  btn.classList.add('spinning');
+  btn.disabled = true;
+  if (atxt) atxt.textContent = 'Generating summary…';
+  if (typeof generateGeminiSummary === 'function') {
+    generateGeminiSummary(
+      (typeof S !== 'undefined' ? S.currentPlace : 'Bhimavaram'),
+      (typeof S !== 'undefined' ? S.currentLevel : 'Moderate'),
+      atxt
+    ).finally(() => {
+      btn.classList.remove('spinning');
+      btn.disabled = false;
+    });
+  }
+}
+window.onAiRefreshClickMobile = onAiRefreshClickMobile;
+
+/* ─ Mobile zoom pct sync ─ */
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof map !== 'undefined') return; // dashboard.js inits map
+  // Patch: after map is inited in dashboard.js, add zoomend listener for mobile pct
+  const checkMap = setInterval(() => {
+    if (typeof map !== 'undefined' && map) {
+      clearInterval(checkMap);
+      map.on('zoomend', () => {
+        const el = document.getElementById('mZoomPct');
+        if (el) el.textContent = map.getZoom();
+      });
+    }
+  }, 300);
+});
+</script>
+
 </body>
-</html>
+</html>\
